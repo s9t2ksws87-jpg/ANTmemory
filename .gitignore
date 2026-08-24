@@ -1,0 +1,36 @@
+# Dependencies and downloaded models
+**/node_modules/
+**/.cache/
+
+# Runtime state, databases, and generated test artifacts
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+logs/
+test-logs/
+bulk-run-logs/
+bulk-tests/
+preflight-logs/
+stores/
+backups/
+
+# Local backups and environment-specific data
+backup-configs/
+runtime/
+workspaces.json
+*.log
+*.out
+*.err
+
+# Local environment / credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# OS/editor files
+.DS_Store
+Thumbs.db

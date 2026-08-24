@@ -1,0 +1,22 @@
+{
+  "name": "ant-memory-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared agent-memory-store runtime used by ANTmemory; workspace DB isolation is handled by ../bin/ant-memory.mjs",
+  "scripts": {
+    "postinstall": "node ../bin/apply-patches.mjs",
+    "patch": "node ../bin/apply-patches.mjs",
+    "test": "node ../bin/test-baseline.mjs",
+    "test:concurrency": "node ../bin/concurrency-smoke.mjs",
+    "test:all": "node ../bin/test-baseline.mjs && node ../bin/concurrency-smoke.mjs"
+  },
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "agent-memory-store": "0.0.9"
+  },
+  "overrides": {
+    "hono": "4.12.34",
+    "sharp": "0.35.3"
+  }
+}

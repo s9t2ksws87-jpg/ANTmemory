@@ -1,0 +1,4 @@
+{
+  "_comment": "ワークスペース名 → 実パス の対応表の例。実行時の正本は runtime/workspaces.json（Git管理外）。ここに無いワークスペースは初回起動時に自動登録される。",
+  "example-project": "<ABSOLUTE_PATH_TO_PROJECT>"
+}

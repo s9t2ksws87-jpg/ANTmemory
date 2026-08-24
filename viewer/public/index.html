@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ANTmemory データベースビューア</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- audit: 外部CDN依存を廃止（オフライン完結・markedは使用しない安全な表示へ） -->
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar: Workspaces & Stats -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="brand">
+          <div class="brand-icon">🧠</div>
+          <div class="brand-text">
+            <h1>ANTmemory</h1>
+            <span class="version-tag">Database Viewer</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-title">
+          <span>ワークスペース一覧</span>
+          <button id="refreshWorkspacesBtn" class="icon-btn" title="更新">🔄</button>
+        </div>
+        <div id="workspaceList" class="workspace-list">
+          <div class="skeleton-item"></div>
+          <div class="skeleton-item"></div>
+          <div class="skeleton-item"></div>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="db-info">
+          <span id="activeStoreCount">0 メモリ</span>
+          <span id="activeStoreSize">0 KB</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Top Navbar -->
+      <header class="top-header">
+        <div class="active-workspace-title">
+          <span class="ws-icon">📂</span>
+          <h2 id="currentWsName">ワークスペースを選択してください</h2>
+        </div>
+
+        <div class="view-tabs">
+          <button class="tab-btn active" data-tab="memories">
+            <span>📝 記憶 (Chunks)</span>
+            <span id="chunkBadgeCount" class="badge">0</span>
+          </button>
+          <button class="tab-btn" data-tab="state">
+            <span>⚙️ 状態 (State)</span>
+            <span id="stateBadgeCount" class="badge">0</span>
+          </button>
+          <button class="tab-btn" data-tab="dashboard">
+            <span>📊 統計ダッシュボード</span>
+          </button>
+        </div>
+
+        <div class="header-actions">
+          <button id="exportJsonBtn" class="btn btn-secondary">📥 JSON</button>
+          <button id="exportMdBtn" class="btn btn-secondary">📄 Markdown</button>
+        </div>
+      </header>
+
+      <!-- Tab Content 1: Memories Grid -->
+      <div id="memoriesTab" class="tab-content active">
+        <!-- Search and Filter Bar -->
+        <div class="toolbar">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="searchInput" placeholder="トピック、本文、タグでリアルタイム検索 (FTS5)..." autocomplete="off">
+            <button id="clearSearchBtn" class="clear-btn" hidden>✕</button>
+          </div>
+
+          <div class="filter-group">
+            <!-- Agent Filter（audit: DBから動的取得） -->
+            <select id="agentFilter" class="custom-select">
+              <option value="">全エージェント</option>
+            </select>
+
+            <!-- Importance Filter -->
+            <select id="importanceFilter" class="custom-select">
+              <option value="">全重要度</option>
+              <option value="critical">🔴 Critical</option>
+              <option value="high">🟠 High</option>
+              <option value="medium">🟡 Medium</option>
+              <option value="low">🔵 Low</option>
+            </select>
+
+            <!-- Sort -->
+            <select id="sortOrder" class="custom-select">
+              <option value="updated_desc">更新日時 (新しい順)</option>
+              <option value="created_desc">作成日時 (新しい順)</option>
+              <option value="importance">重要度順</option>
+            </select>
+
+            <!-- audit: 履歴表示 -->
+            <label class="history-toggle" title="superseded / retracted / expired も表示する">
+              <input type="checkbox" id="includeHistory"> 履歴も表示
+            </label>
+          </div>
+        </div>
+
+        <!-- Selected Filter Chips -->
+        <div id="activeTagsContainer" class="tags-filter-bar hidden">
+          <span class="tags-label">タグ絞り込み:</span>
+          <div id="tagsList" class="tags-chips"></div>
+          <button id="resetTagBtn" class="reset-tag-btn">クリア</button>
+        </div>
+
+        <!-- Memories List Grid -->
+        <div id="memoriesGrid" class="cards-grid">
+          <!-- Dynamically populated -->
+        </div>
+
+        <div id="emptyState" class="empty-state hidden">
+          <div class="empty-icon">📭</div>
+          <h3>記憶が見つかりませんでした</h3>
+          <p>検索条件またはフィルターを変更してください。</p>
+        </div>
+      </div>
+
+      <!-- Tab Content 2: State Table -->
+      <div id="stateTab" class="tab-content">
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>Value</th>
+                <th>Updated At</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="stateTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab Content 3: Dashboard -->
+      <div id="dashboardTab" class="tab-content">
+        <div class="dashboard-grid">
+          <div class="dash-card">
+            <h3>🤖 エージェント別投稿比率</h3>
+            <div id="agentStatsList" class="stats-bars"></div>
+          </div>
+          <div class="dash-card">
+            <h3>⭐ 重要度別内訳</h3>
+            <div id="importanceStatsList" class="stats-bars"></div>
+          </div>
+          <div class="dash-card full-width">
+            <h3>⚡ 最近の記憶更新アクティビティ</h3>
+            <div id="recentActivityList" class="recent-list"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Detail Modal -->
+  <div id="detailModal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <header class="modal-header">
+        <div class="modal-meta-top">
+          <span id="modalAgentBadge" class="agent-badge">agent</span>
+          <span id="modalImportanceBadge" class="importance-badge">importance</span>
+          <span id="modalStatusBadge"></span>
+          <span id="modalId" class="modal-id" title="クリックでIDをコピー">ID: ------</span>
+        </div>
+        <h2 id="modalTopic" class="modal-title">Topic Title</h2>
+        <button id="closeModalBtn" class="modal-close-btn">✕</button>
+      </header>
+
+      <div class="modal-body">
+        <div class="modal-tags" id="modalTags"></div>
+        <div class="modal-dates">
+          <span>🕒 作成: <strong id="modalCreatedAt">-</strong></span>
+          <span>🔄 更新: <strong id="modalUpdatedAt">-</strong></span>
+          <span id="modalExpiresRow" class="hidden">⌛ 有効期限: <strong id="modalExpiresAt">-</strong></span>
+        </div>
+
+        <!-- audit: 変更履歴タイムライン -->
+        <div class="history-box">
+          <div class="content-header">
+            <span>📜 変更履歴 (History)</span>
+          </div>
+          <div id="modalHistory" class="modal-history"></div>
+        </div>
+
+        <div class="content-box">
+          <div class="content-header">
+            <span>本文 (Content)</span>
+            <div class="content-view-toggle">
+              <button id="viewMdBtn" class="toggle-btn active">整形表示</button>
+              <button id="viewRawBtn" class="toggle-btn">Raw</button>
+              <button id="copyContentBtn" class="btn btn-small">📋 コピー</button>
+            </div>
+          </div>
+          <div id="modalContentMd" class="content-text"></div>
+          <pre id="modalContentRaw" class="raw-body hidden"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden">トーストメッセージ</div>
+
+  <script src="app.js"></script>
+</body>
+</html>
