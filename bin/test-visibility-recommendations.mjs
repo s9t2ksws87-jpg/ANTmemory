@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Visibility推奨（Promotion/Decay推奨ベース）の試験
+ * Phase Recall-7: Visibility推奨（Promotion/Decay推奨ベース）の試験
  *
  * - get_visibility_recommendations が usage統計に基づく推奨を返す
  * - ツール自体は何も変更しない（自動適用なし）
@@ -17,7 +17,7 @@ import { DatabaseSync } from "node:sqlite";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = join(ROOT, "bin");
 
-const WS = "visibility-recommendation-test";
+const WS = "recall-recommend-test";
 let passed = 0, failed = 0;
 const check = (name, ok, detail = "") => {
   if (ok) { passed++; console.log(`PASS ${name}`); }
@@ -41,12 +41,12 @@ const { StdioClientTransport } = await import(
   }
 }
 
-const client = new Client({ name: "recommendation", version: "1.0.0" });
+const client = new Client({ name: "recallrec", version: "1.0.0" });
 await client.connect(new StdioClientTransport({
   command: process.execPath,
   args: [join(BIN, "ant-memory.mjs")],
   cwd: ROOT,
-  env: { ...process.env, ANT_MEMORY_ROOT: ROOT, ANT_MEMORY_WORKSPACE: WS, ANT_MEMORY_CLIENT: "hermes" },
+  env: { ...process.env, ANT_MEMORY_ROOT: ROOT, ANT_MEMORY_WORKSPACE: WS, ANT_MEMORY_CLIENT: "hermes", ANT_MEMORY_ADVANCED_TOOLS: "1" },
 }));
 
 try {
@@ -56,7 +56,7 @@ try {
     arguments: {
       topic: "rec試験: 頻繁参照される原則",
       content: "軍制の編成に関する頻繁参照の記録。この原則は毎回の作業基準になる。",
-      tags: ["recommendation"], importance: "high",
+      tags: ["recallrec"], importance: "high",
     },
   });
   const hotId = text(w1).match(/id=`([0-9a-f]{10})`/i)[1];
@@ -67,7 +67,7 @@ try {
     arguments: {
       topic: "rec試験: 古い方針",
       content: "古い方針の記録。後で改訂される。",
-      tags: ["recommendation"], importance: "low",
+      tags: ["recallrec"], importance: "low",
     },
   });
   const oldId = text(w2).match(/id=`([0-9a-f]{10})`/i)[1];
@@ -78,7 +78,7 @@ try {
       topic: "rec試験: 新しい方針",
       content: "改訂版の方針。軍制の編成とは無関係の内容。",
       reason: "方針改訂のため",
-      tags: ["recommendation"],
+      tags: ["recallrec"],
     },
   });
 

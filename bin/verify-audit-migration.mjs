@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * 本番移行の検証
+ * Phase 9: 本番移行の検証
  *
- * - capture-baseline.mjs で採取した基準値(baseline.json)と現在の全DBを照合:
+ * - Phase 0 で採取した基準値(baseline.json)と現在の全DBを照合:
  *   chunk件数・ID・本文ハッシュが完全一致すること（非破壊性の最終確認）
- * - 全DBで integrity_check=ok / fk違反0 / 監査スキーマ存在を確認
+ * - 全DBで integrity_check=ok / fk違反0 / auditスキーマ存在を確認
  *
  * 実行: node bin/verify-audit-migration.mjs
  */
@@ -21,7 +21,7 @@ const STORES_DIR = join(ROOT, "stores");
 // 最新の基準値を読む
 const baselinePointer = join(ROOT, "backups", "LATEST_BASELINE.txt");
 if (!existsSync(baselinePointer)) {
-  console.error("基準値ポインタがない: backups/LATEST_BASELINE.txt（capture-baseline.mjs を先に実行）");
+  console.error("基準値ポインタがない: backups/LATEST_BASELINE.txt（Phase 0 を先に実行）");
   process.exit(1);
 }
 const baselinePath = readFileSync(baselinePointer, "utf8").trim();
@@ -53,7 +53,7 @@ for (const entry of baseline.stores) {
     check(`${entry.workspace}: integrity=ok`, integrity === "ok", integrity);
     check(`${entry.workspace}: fk違反0`, fk === 0, `fk=${fk}`);
 
-    // 保存済み基準値のchunkハッシュ一覧と照合
+    // Phase 0 のchunkハッシュ一覧と照合
     const rows = db
       .prepare("SELECT id, topic, agent, content FROM chunks ORDER BY id")
       .all();
@@ -68,15 +68,15 @@ for (const entry of baseline.stores) {
       if (cur === undefined) mismatches.push(`${b.id} 欠損`);
       else if (cur !== b.contentSha256) mismatches.push(`${b.id} 本文変化`);
     }
-    // 追加されたchunkは許容（監査スキーマ移行後のテスト書込など）だが欠損・改変は不可
+    // 追加されたchunkは許容（audit移行後のテスト書込など）だが欠損・改変は不可
     check(`${entry.workspace}: 既存chunk無欠損・無改変`, mismatches.length === 0,
       mismatches.slice(0, 3).join(", "));
 
-    // 監査スキーマ存在
+    // audit スキーマ存在
     const auditTables = db.prepare(
       "SELECT COUNT(*) AS c FROM sqlite_master WHERE type='table' AND name IN ('memory_events','memory_relations','memory_lifecycle')",
     ).get().c;
-    check(`${entry.workspace}: 監査スキーマ完備`, auditTables === 3, `tables=${auditTables}`);
+    check(`${entry.workspace}: auditスキーマ完備`, auditTables === 3, `tables=${auditTables}`);
 
     totalChunks += baseRows.length;
   } finally { db.close(); }

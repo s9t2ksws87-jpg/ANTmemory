@@ -1,3 +1,5 @@
+> Historical evidence for ANTmemory 1.0.0. For current release checks, see [RELEASE_VALIDATION.md](RELEASE_VALIDATION.md).
+
 # ANTmemory v1.0.0 アーキテクチャ検証報告
 
 作成日: 2026-08-22

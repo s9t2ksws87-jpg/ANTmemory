@@ -39,8 +39,8 @@ Please report security-sensitive findings privately to the repository owner thro
 
 For ordinary bugs that do not involve sensitive information, use GitHub Issues.
 
-## Upstream dependency and patches
+## Native runtime and dependencies
 
-ANTmemory currently targets `agent-memory-store` 0.0.9 and applies version-sensitive patches during `postinstall`. The patcher fails closed when an unsupported upstream version or unexpected source shape is detected instead of silently applying a partial patch.
+ANTmemory 2.0.0 owns its MCP/storage/search runtime. It does not install or patch `agent-memory-store`; derived-code attribution is retained in `THIRD_PARTY_NOTICES.md`.
 
-Dependency updates should therefore be treated as compatibility/security work and tested before release.
+Dependency updates and native-runtime changes require compatibility checks before release. Install from `server/package-lock.json` with `npm ci`, run the release regression suite, and audit production dependencies.

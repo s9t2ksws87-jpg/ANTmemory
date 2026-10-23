@@ -1,14 +1,14 @@
 /**
- * ANTmemory 監査ライフサイクル層（ANTmemory 所有コード）
+ * ANTmemory audit ライフサイクル層（ANTmemory 所有コード）
  *
- * 上流 agent-memory-store の chunks を物理変更しない。訂正・撤回・置換・
+ * ANTmemory native chunks を物理削除しない。訂正・撤回・置換・
  * 重要度変更はすべて memory_events / memory_relations / memory_lifecycle への
  * 追記で表現する。物理 DELETE はこの層からは決して実行しない。
  */
 
 import { randomUUID } from "node:crypto";
 
-// 上流（パッチ適用済み agent-memory-store）への参照は起動時に一度だけ解決する。
+// ANTmemory native coreへの参照は起動時に一度だけ解決する。
 let _db = null;
 let _embeddings = null;
 
@@ -19,15 +19,15 @@ let _embeddings = null;
  */
 export async function initLifecycle() {
   if (!_db) {
-    const loaded = await import("./upstream.mjs");
-    const u = await loaded.loadUpstream();
+    const loaded = await import("./core.mjs");
+    const u = await loaded.loadCore();
     _db = u.db;
     _embeddings = u.embeddings;
   }
   return { db: _db, embeddings: _embeddings };
 }
 
-/** 監査スキーマ確保（migrationと同じ定義・冪等）。新規DBにも対応。 */
+/** audit スキーマ確保（Phase 2 migration と同じ定義・冪等）。新規DBにも対応。 */
 export async function ensureAuditSchema() {
   await initLifecycle();
   const db = getDb();
@@ -67,6 +67,22 @@ CREATE TABLE IF NOT EXISTS memory_lifecycle (
 INSERT OR IGNORE INTO memory_lifecycle (chunk_id, status, updated_at)
   SELECT id, 'active', updated_at FROM chunks;
 `);
+
+  // Phase A以降は1つの旧版から複数currentへ分岐させない。
+  // 既存DBに過去の分岐が残っている場合、起動不能にせず警告して互換運用を続ける。
+  const duplicate = db.prepare(
+    `SELECT target_id, COUNT(*) AS c FROM memory_relations
+      WHERE relation_type = 'supersedes'
+      GROUP BY target_id HAVING COUNT(*) > 1 LIMIT 1`,
+  ).get();
+  if (!duplicate) {
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_relations_one_superseder
+      ON memory_relations(target_id) WHERE relation_type = 'supersedes'`);
+  } else {
+    process.stderr.write(
+      `[ant-memory] Phase A warning: legacy supersedes branch remains at ${duplicate.target_id} (${duplicate.c} successors); new branches are blocked by runtime checks.\n`,
+    );
+  }
 }
 
 function getDb() {
@@ -115,10 +131,19 @@ function insertRelation({ sourceId, targetId, relationType, actor, reason }) {
     .run(sourceId, targetId, relationType, actor, reason ?? null, now());
 }
 
+/** Phase D: 既存event/relation基盤を外部構造の最小循環から再利用する。新しい表は増やさない。 */
+export function appendMemoryEvent({ chunkId, type, actor, model = null, provider = null, reason = null, oldValue = null, newValue = null }) {
+  return insertEvent({ chunkId, type, actor, model, provider, reason, oldValue, newValue });
+}
+
+export function appendMemoryRelation({ sourceId, targetId, relationType, actor, reason = null }) {
+  insertRelation({ sourceId, targetId, relationType, actor, reason });
+  return true;
+}
+
 /**
  * supersede_context: 新記録を作り、旧記録との置換関係と理由を残す。
- * 新chunkは上流 store.js の writeChunk を使わず、直接 insertChunk 相当をここで行う
- * （actor 強制やイベント記録を一体化するため）。埋め込みは上流 embeddings.js を利用。
+ * 新chunkはnative DBへ直接insertし、actor強制・イベント記録・埋め込み更新を一体化する。
  */
 export async function supersedeChunk({
   oldId,
@@ -128,6 +153,8 @@ export async function supersedeChunk({
   tags = [],
   importance = "medium",
   ttlDays = null,
+  expiresAtOverride = undefined,
+  sourceRef = null,
   reason,
   model = null,
   provider = null,
@@ -138,6 +165,14 @@ export async function supersedeChunk({
   const db = getDb();
   const oldRow = db.prepare("SELECT id FROM chunks WHERE id = ?").get(oldId);
   if (!oldRow) throw new Error(`置換対象が見つかりません: ${oldId}`);
+  const oldStatus = getStatus(oldId);
+  if (oldStatus !== "active") {
+    const successor = findSuccessor(oldId);
+    throw new Error(
+      `置換対象 ${oldId} は active ではありません (status=${oldStatus})` +
+        (successor ? `。後継 ${successor.successor_id} を確認してください` : ""),
+    );
+  }
 
   // 新chunkのIDは上流と同じ生成規則（agent+topic+時刻のsha1/10桁）
   const { createHash } = await import("node:crypto");
@@ -148,32 +183,62 @@ export async function supersedeChunk({
   const seed = `${actor}:${topic}:${Date.now()}:${Math.random()}`;
   const newId = createHash("sha1").update(seed).digest("hex").slice(0, 10);
   const ts = now();
-  const expiresAt = ttlDays ? new Date(Date.now() + ttlDays * 86_400_000).toISOString() : null;
+  const expiresAt = expiresAtOverride !== undefined
+    ? expiresAtOverride
+    : ttlDays
+      ? new Date(Date.now() + ttlDays * 86_400_000).toISOString()
+      : null;
 
-  insertChunk({
-    id: newId,
-    topic,
-    agent: actor,
-    tags,
-    importance,
-    content,
-    embedding: null,
-    createdAt: ts,
-    updatedAt: ts,
-    expiresAt,
-  });
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const currentStatus = getStatus(oldId);
+    const existingSuccessor = findSuccessor(oldId);
+    if (currentStatus !== "active" || existingSuccessor) {
+      throw new Error(
+        `置換競合: ${oldId} は既に更新されています` +
+          (existingSuccessor ? ` (successor=${existingSuccessor.successor_id})` : ` (status=${currentStatus})`),
+      );
+    }
+
+    insertChunk({
+      id: newId,
+      topic,
+      agent: actor,
+      tags,
+      importance,
+      content,
+      embedding: null,
+      createdAt: ts,
+      updatedAt: ts,
+      expiresAt,
+    });
+
+    insertRelation({ sourceId: newId, targetId: oldId, relationType: "supersedes", actor, reason });
+    insertEvent({ chunkId: oldId, type: "superseded", actor, model, provider, reason, newValue: newId });
+    insertEvent({ chunkId: newId, type: "created", actor, model, provider, reason: `supersedes ${oldId}: ${reason}` });
+    if (sourceRef && String(sourceRef).trim()) {
+      insertEvent({
+        chunkId: newId,
+        type: "source_observed",
+        actor,
+        model,
+        provider,
+        reason: `source for revision of ${oldId}`,
+        newValue: String(sourceRef).trim(),
+      });
+    }
+    setStatus(oldId, "superseded");
+    setStatus(newId, "active");
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
 
   const text = prepareText({ topic, tags, content });
   embed(text).then((emb) => {
     if (emb) updateEmbedding(newId, emb);
   });
-
-  // 関係と履歴
-  insertRelation({ sourceId: newId, targetId: oldId, relationType: "supersedes", actor, reason });
-  insertEvent({ chunkId: oldId, type: "superseded", actor, model, provider, reason, newValue: newId });
-  insertEvent({ chunkId: newId, type: "created", actor, model, provider, reason: `supersedes ${oldId}: ${reason}` });
-  setStatus(oldId, "superseded");
-  setStatus(newId, "active");
 
   return { newId, oldId };
 }
@@ -228,31 +293,63 @@ export function restoreChunk({ id, actor, reason, model = null, provider = null 
   if (!reason || !String(reason).trim()) {
     throw new Error("restore_context には理由(reason)が必須です");
   }
+  const db = getDb();
+  if (!db.prepare("SELECT id FROM chunks WHERE id = ?").get(id)) {
+    throw new Error(`復帰対象が見つかりません: ${id}`);
+  }
   const prev = getStatus(id);
+  if (prev === "active") {
+    throw new Error(`記録 ${id} は既に active です`);
+  }
+  const successor = findSuccessor(id);
+  if (successor) {
+    throw new Error(
+      `記録 ${id} には後継 ${successor.successor_id} があるため current へ復帰できません。` +
+      "旧版の本文は read_context で参照できます",
+    );
+  }
   insertEvent({ chunkId: id, type: "restored", actor, model, provider, reason, oldValue: prev, newValue: "active" });
   setStatus(id, "active");
   return true;
 }
 
-/**
- /** 新規chunkをlifecycleへactive登録（write直後に呼ぶ。冪等） */
- export function registerNewChunk(chunkId) {
+/** 新規chunkをlifecycleへactive登録し、CREATED/visibilityを補う（write直後・冪等）。 */
+export function registerNewChunk(chunkId, { actor = "system", model = null, provider = null, reason = "write_context" } = {}) {
    try {
      const db = getDb();
+     if (!db.prepare("SELECT id FROM chunks WHERE id = ?").get(chunkId)) return false;
      db.prepare(
        `INSERT OR IGNORE INTO memory_lifecycle (chunk_id, status, updated_at)
         VALUES (?, 'active', ?)`,
      ).run(chunkId, now());
-     // 選択的想起: 新規chunkにもvisibility初期値(warm)を付与（migration後書込の漏れ対策）。
+     const hasCreated = db.prepare(
+       "SELECT 1 FROM memory_events WHERE chunk_id = ? AND event_type = 'created' LIMIT 1",
+     ).get(chunkId);
+     if (!hasCreated) {
+       insertEvent({ chunkId, type: "created", actor, model, provider, reason });
+     }
+     // write直後に既に期限切れになっている極短TTLでも、次回再起動までactiveを漏らさない。
+     const expired = db.prepare(
+       `SELECT 1 FROM chunks WHERE id = ? AND expires_at IS NOT NULL
+          AND expires_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+     ).get(chunkId);
+     if (expired) {
+       insertEvent({ chunkId, type: "expired", actor: "system", reason: "TTL失効" });
+       setStatus(chunkId, "expired");
+     }
+     // recall: 新規chunkにもvisibility初期値(warm)を付与（migration後書込の漏れ対策）。
      // 未登録は検索時に暗黙warm扱いだが、verify基準・推奨算出の母集団から漏れないよう明示登録する。
      db.prepare(
        `INSERT OR IGNORE INTO memory_visibility (chunk_id, visibility, reason, changed_at, actor)
         VALUES (?, 'warm', '新規書込時の初期値', ?, 'system')`,
      ).run(chunkId, now());
-   } catch {}
- }
+     return true;
+   } catch {
+     return false;
+   }
+}
 
- /** findSuccessor: sourceId の後継（sourceId を supersede した新記録）を返す。
+/** findSuccessor: sourceId の後継（sourceId を supersede した新記録）を返す。
  * 関係は「新 → 旧」で supersedes が入るので、旧IDは target_id 側で引く。
  */
 export function findSuccessor(oldChunkId) {
@@ -298,7 +395,7 @@ export function getContextHistory(id) {
 }
 
 /**
- * TTL失効の監査対応版: 物理DELETEではなく expired 状態へ遷移させる。
+ * TTL失効の audit 版: 物理DELETEではなく expired 状態へ遷移させる。
  * 通常検索からは隠れるが本文はDBに残る。
  */
 export function expireDueChunks() {
@@ -313,9 +410,9 @@ export function expireDueChunks() {
   for (const { id } of due) {
     if (getStatus(id) === "active") {
       insertEvent({ chunkId: id, type: "expired", actor: "system", reason: "TTL失効" });
+      setStatus(id, "expired");
       count += 1;
     }
-    setStatus(id, "expired");
   }
   return count;
 }

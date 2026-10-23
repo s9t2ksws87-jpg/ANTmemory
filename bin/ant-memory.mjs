@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * ant-memory — agent-memory-store のワークスペース別ランチャー
+ * ant-memory — ANTmemory native server のワークスペース別ランチャー
  *
- * サーバー本体（agent-memory-store）は <ANTMEMORY_ROOT>\server に
- * 1 つだけインストールして全エージェントで使い回す。
+ * サーバー本体は <ANTMEMORY_ROOT>\server に1つだけ配置し、
+ * 全エージェントで使い回す。
  * DB ファイルだけを「起動時の作業ディレクトリ（＝ワークスペース）」ごとに
  * 物理的に分離する。
  *
@@ -41,18 +41,11 @@ const ROOT = process.env.ANT_MEMORY_ROOT
 
 const STORES_DIR = path.join(ROOT, "stores");
 const LOG_FILE = path.join(ROOT, "logs", "launcher.log");
-// 実行時レジストリはGit管理外の runtime/ へ置き、リポジトリ設定と分離する。
+// Phase 7: 実行時レジストリはGit管理外の runtime/ へ。リポジトリ設定と分離する。
 const REGISTRY_FILE = process.env.ANT_MEMORY_REGISTRY
   ? path.resolve(process.env.ANT_MEMORY_REGISTRY)
   : path.join(ROOT, "runtime", "workspaces.json");
-const SERVER_ENTRY = path.join(
-  ROOT,
-  "server",
-  "node_modules",
-  "agent-memory-store",
-  "src",
-  "index.js",
-);
+const SERVER_ENTRY = path.join(ROOT, "server", "native-server.mjs");
 
 // ワークスペースの目印。上位ディレクトリへ辿りながら最初に見つかった所を根とする。
 const MARKERS = [
@@ -207,9 +200,7 @@ function tryCandidate(dir, label) {
  *
  * (a) 決定的な特定 — 親プロセスの --workspace_id と突き合わせる
  *     language_server の起動引数 --workspace_id は sha256(フォルダURI) である。
- *     例: sha256("file:///f%3A/ANTIGRABTY/%E3%83%9F...") =
- *         0923ce8c0d9ca0c41af5cdd7a4c3969b0d4c91148d637f0b3a2eec64e4635543
- *         が実際の --workspace_id と完全一致することを実測で確認した。
+ *     folder URIをsha256化した値と --workspace_id を照合する。
  *     ハッシュ元の文字列は workspace.json の folder そのままなので、
  *     候補をハッシュして突き合わせれば推測なしで一意に決まる。
  *
@@ -293,7 +284,7 @@ function antigravityOpenWorkspace() {
   //     workspace_id は 2 種類の形式が実測されている:
   //       - sha256(workspace.json の folder 文字列)（旧バージョン）
   //       - folder 文字列の非英数字連続を "_" に置換したスラグ
-  //         例: file:///f%3A/ANTIGRABTY/ANTmemory → file_f_3A_ANTIGRABTY_ANTmemory
+  //         例: file:///projects/ANTmemory → file_projects_ANTmemory
   //     候補を総当たりで両形式に変換すれば推測なしに一致する。
   //     候補が 1 つしか無いなら、そもそも曖昧さがないので照会自体を省く（約0.6秒の節約）。
   if (candidates.length > 1) {
@@ -319,7 +310,7 @@ function antigravityOpenWorkspace() {
  * 実行中のプロセスの起動引数から --workspace_id を拾う。
  * 形式はバージョンで異なる（両方実測）:
  *   - sha256(フォルダURI): 64桁の16進
- *   - URLスラグ: file:///f%3A/ANTIGRABTY/ANTmemory → file_f_3A_ANTIGRABTY_ANTmemory
+ *   - URLスラグ: file:///projects/ANTmemory → file_projects_ANTmemory
  *
  * 探し方は 2 通り。実測に基づいて両方見る。
  *
@@ -503,7 +494,7 @@ const storePath = path.join(STORES_DIR, resolved.slug);
 
 mkdirSync(storePath, { recursive: true });
 
-// agent-memory-store は読み込み時に AGENT_STORE_PATH を見る。import より前に設定する。
+// native DB core は読み込み時に AGENT_STORE_PATH を見る。import より前に設定する。
 process.env.AGENT_STORE_PATH = storePath;
 
 const client = process.env.ANT_MEMORY_CLIENT || "unknown";
@@ -542,33 +533,8 @@ process.stderr.write(
   `[ant-memory] workspace="${resolved.slug}" store="${storePath}" (${resolved.source})\n`,
 );
 
-// ─── 上流サーバーをロードし、ANTmemory 固有ツールを追加する ──────────────
-// 上流 index.js は自身で McpServer を生成して connect するため、
-// McpServer.prototype.connect を一時的にラップして、生成されたインスタンスへ
-// ANTmemory 固有ツールを後登録する。上流ソースは一切変更しない。
-const { McpServer } = await import(
-  pathToFileURL(
-    path.join(ROOT, "server", "node_modules", "@modelcontextprotocol", "sdk", "dist", "esm", "server", "mcp.js"),
-  ).href
-);
-
-const originalConnect = McpServer.prototype.connect;
-McpServer.prototype.connect = async function (transport) {
-  const result = await originalConnect.call(this, transport);
-  try {
-    const { registerAntTools } = await import(
-      pathToFileURL(path.join(ROOT, "server", "lib", "register-ant-tools.mjs")).href
-    );
-    registerAntTools(this, {
-      trustedActor: client,
-      model: process.env.ANT_MEMORY_MODEL || null,
-      provider: process.env.ANT_MEMORY_PROVIDER || null,
-    });
-    process.stderr.write(`[ant-memory] ANTmemory tools registered (actor=${client})\n`);
-  } catch (err) {
-    process.stderr.write(`[ant-memory] ANTmemory tool registration failed: ${err.message}\n`);
-  }
-  return result;
-};
-
+// ─── Phase C1: ANTmemory native serverを直接起動 ─────────────────────────────
+// サーバー所有権もDB/search/embedding/state primitiveもANTmemory側にある。
 await import(pathToFileURL(SERVER_ENTRY).href);
+
+

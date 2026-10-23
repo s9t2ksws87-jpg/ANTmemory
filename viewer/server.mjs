@@ -5,13 +5,13 @@ import { URL, fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { exec } from "node:child_process";
 
-// ─── 設定（可搬化。ANT_MEMORY_ROOT または相対配置で解決）─────────────────────
+// ─── 設定（Phase 7: 可搬化。ANT_MEMORY_ROOT または相対配置で解決）─────────────
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = process.env.ANT_MEMORY_ROOT
   ? path.resolve(process.env.ANT_MEMORY_ROOT)
   : path.resolve(HERE, "..");
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3737;
-// 既定は localhost のみ。LAN公開する場合は明示的に HOST=0.0.0.0 を指定。
+// Phase 6: 既定は localhost のみ。LAN公開する場合は明示的に HOST=0.0.0.0 を指定。
 const HOST = process.env.HOST || "127.0.0.1";
 const STORES_DIR = path.join(ROOT, "stores");
 const PUBLIC_DIR = path.join(HERE, "public");
@@ -42,7 +42,7 @@ const MIME_TYPES = {
   ".ico": "image/x-icon"
 };
 
-// ─── audit: FTS5 検索（UIの「FTS5」表記と実装を一致させる）──────────────────────
+// ─── audit: FTS5 検索（UIの「FTS5」表記と実装を一致させる・Phase 6）──────────────
 // trigram トークナイザの FTS 索引が無いDBでは LIKE へ自動フォールバックする。
 function searchMemories(db, q, params) {
   const { agent, importance, tag, sort, limit } = params;
@@ -121,7 +121,7 @@ const server = http.createServer((req, res) => {
   const sendJson = (data, statusCode = 200) => {
     res.writeHead(statusCode, {
       "Content-Type": "application/json; charset=utf-8",
-      // 同一生成元からのアクセス専用。外部オリジンからの読み取りを許さない。
+      // Phase 6: 同一生成元からのアクセス専用。外部オリジンからの読み取りを許さない。
       "Access-Control-Allow-Origin": "null",
       "Cache-Control": "no-cache"
     });
@@ -207,17 +207,28 @@ const server = http.createServer((req, res) => {
 
           let rows = searchMemories(db, q, { agent, importance, tag, sort, limit });
 
-          // audit: lifecycle フィルタ（既定は active のみ）
+          // lifecycle / visibility / current を一覧時点で明示する。
+          const hasLifecycle = db.prepare(
+            "SELECT COUNT(*) AS c FROM sqlite_master WHERE type='table' AND name='memory_lifecycle'",
+          ).get().c > 0;
+          const hasVisibility = db.prepare(
+            "SELECT COUNT(*) AS c FROM sqlite_master WHERE type='table' AND name='memory_visibility'",
+          ).get().c > 0;
+          const hasRelations = db.prepare(
+            "SELECT COUNT(*) AS c FROM sqlite_master WHERE type='table' AND name='memory_relations'",
+          ).get().c > 0;
+          const statusMap = hasLifecycle
+            ? new Map(db.prepare("SELECT chunk_id, status FROM memory_lifecycle").all().map((r) => [r.chunk_id, r.status]))
+            : new Map();
+          const visibilityMap = hasVisibility
+            ? new Map(db.prepare("SELECT chunk_id, visibility FROM memory_visibility").all().map((r) => [r.chunk_id, r.visibility]))
+            : new Map();
+          const successorSet = hasRelations
+            ? new Set(db.prepare("SELECT DISTINCT target_id FROM memory_relations WHERE relation_type='supersedes'").all().map((r) => r.target_id))
+            : new Set();
+
           if (!includeHistory) {
-            const hasLifecycle = db.prepare(
-              "SELECT COUNT(*) AS c FROM sqlite_master WHERE type='table' AND name='memory_lifecycle'",
-            ).get().c > 0;
-            if (hasLifecycle) {
-              const statusMap = new Map(
-                db.prepare("SELECT chunk_id, status FROM memory_lifecycle").all().map((r) => [r.chunk_id, r.status]),
-              );
-              rows = rows.filter((r) => (statusMap.get(r.id) ?? "active") === "active");
-            }
+            rows = rows.filter((r) => (statusMap.get(r.id) ?? "active") === "active");
           }
 
           const memories = rows.map(r => {
@@ -228,7 +239,15 @@ const server = http.createServer((req, res) => {
               tagsArr = [];
             }
             const { rank, ...rest } = r;
-            return { ...rest, tags: tagsArr };
+            const status = statusMap.get(r.id) ?? "active";
+            const visibility = visibilityMap.get(r.id) ?? "warm";
+            return {
+              ...rest,
+              tags: tagsArr,
+              status,
+              visibility,
+              current: status === "active" && !successorSet.has(r.id),
+            };
           });
 
           return sendJson({ memories, total: memories.length });
@@ -239,21 +258,21 @@ const server = http.createServer((req, res) => {
           const id = parsedUrl.searchParams.get("id");
           if (!id) return sendError("id parameter is required");
 
-          const hasAuditSchema = db.prepare(
+          const hasAudit = db.prepare(
             "SELECT COUNT(*) AS c FROM sqlite_master WHERE type='table' AND name='memory_events'",
           ).get().c > 0;
-          const hasRecallSchema = db.prepare(
+          const hasRecall = db.prepare(
             "SELECT COUNT(*) AS c FROM sqlite_master WHERE type='table' AND name='memory_recall_log'",
           ).get().c > 0;
 
-          const lcRow = hasAuditSchema
+          const lcRow = hasAudit
             ? db.prepare("SELECT status FROM memory_lifecycle WHERE chunk_id = ?").get(id)
             : null;
-          const events = hasAuditSchema ? db.prepare(
+          const events = hasAudit ? db.prepare(
             `SELECT event_type, actor, model, provider, reason, old_value, new_value, created_at
              FROM memory_events WHERE chunk_id = ? ORDER BY created_at ASC`,
           ).all(id) : [];
-          const relations = hasAuditSchema ? [
+          const relations = hasAudit ? [
             ...db.prepare(
               `SELECT relation_type, target_id AS other_id, 'out' AS direction, actor, reason, created_at
                FROM memory_relations WHERE source_id = ?`,
@@ -266,7 +285,7 @@ const server = http.createServer((req, res) => {
 
           // recall: visibility / usage / recall log
           let visibility = null, usageRow = null, recalls = [];
-          if (hasRecallSchema) {
+          if (hasRecall) {
             const visRow = db.prepare("SELECT visibility, reason, changed_at, actor FROM memory_visibility WHERE chunk_id = ?").get(id);
             visibility = visRow?.visibility ?? "warm";
             usageRow = db.prepare("SELECT access_count, last_accessed_at, last_session_id FROM memory_usage WHERE chunk_id = ?").get(id) ?? null;
@@ -296,7 +315,7 @@ const server = http.createServer((req, res) => {
           return sendJson({ state: rows });
         }
 
-        // audit: Get agents list dynamically
+        // audit: Get agents list dynamically (Phase 6)
         if (pathname === "/api/agents") {
           const rows = db.prepare("SELECT agent, COUNT(*) as count FROM chunks GROUP BY agent ORDER BY count DESC").all();
           return sendJson({ agents: rows });

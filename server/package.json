@@ -1,22 +1,29 @@
 {
   "name": "ant-memory-server",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Shared agent-memory-store runtime used by ANTmemory; workspace DB isolation is handled by ../bin/ant-memory.mjs",
+  "description": "ANTmemory native MCP server with physically isolated workspace databases",
   "scripts": {
-    "postinstall": "node ../bin/apply-patches.mjs",
-    "patch": "node ../bin/apply-patches.mjs",
     "test": "node ../bin/test-baseline.mjs",
-    "test:concurrency": "node ../bin/concurrency-smoke.mjs",
-    "test:all": "node ../bin/test-baseline.mjs && node ../bin/concurrency-smoke.mjs"
+    "test:concurrency": "node ../bin/test-concurrent-writes.mjs",
+    "test:all": "node ../bin/run-tests.mjs"
   },
   "license": "MIT",
   "type": "commonjs",
   "dependencies": {
-    "agent-memory-store": "0.0.9"
+    "@huggingface/transformers": "3.8.1",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "gray-matter": "4.0.3",
+    "zod": "^4.4.3"
+  },
+  "engines": {
+    "node": ">=24"
   },
   "overrides": {
-    "hono": "4.12.34",
-    "sharp": "0.35.3"
+    "sharp": "0.35.5"
+  },
+  "allowScripts": {
+    "onnxruntime-node@1.21.0": true,
+    "protobufjs@7.6.5": true
   }
 }

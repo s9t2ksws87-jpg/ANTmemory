@@ -23,7 +23,7 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: server/package-lock.json
-      - name: Install locked dependencies and apply patches
+      - name: Install locked dependencies
         working-directory: server
         run: npm ci
       - name: Verify install leaves lockfile clean
@@ -42,30 +42,14 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: server/package-lock.json
-      - name: Install locked dependencies and apply patches
+      - name: Install locked dependencies
         working-directory: server
         run: npm ci
-      - name: Run release regression suite from repository root
-        shell: pwsh
-        run: |
-          $tests = @(
-            'bin/test-baseline.mjs',
-            'bin/test-actors.mjs',
-            'bin/test-lifecycle-search.mjs',
-            'bin/test-viewer.mjs',
-            'bin/test-visibility.mjs',
-            'bin/test-token-budget.mjs',
-            'bin/test-summaries.mjs',
-            'bin/test-progressive-disclosure.mjs',
-            'bin/test-usage-sessions.mjs',
-            'bin/test-visibility-recommendations.mjs',
-            'bin/test-field.mjs'
-          )
-          foreach ($test in $tests) {
-            Write-Host "=== $test ==="
-            node $test
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
+      - name: Verify real semantic model inference
+        working-directory: server
+        run: node --input-type=module -e "import {embed} from './lib/native-embeddings.mjs'; const v=await embed('Shared persistent memory'); if(v?.length!==384 || !Array.from(v).every(Number.isFinite)) process.exit(1);"
+      - name: Run complete release regression suite
+        run: npm run test:all --prefix server
 
   dependency-audit:
     name: production dependency audit

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 現状凍結・バックアップ・基準値採取
+ * Phase 0: 現状凍結・バックアップ・基準値採取
  *
  * - 全既存 store.db を backups/<timestamp>/ へ整合的なスナップショットとして退避
  *   （SQLite の VACUUM INTO を使うので WAL 中のデータも含めて一貫性が取れる）
@@ -116,7 +116,7 @@ for (const ws of workspaces) {
 const baselinePath = join(backupDir, "baseline.json");
 writeFileSync(baselinePath, JSON.stringify(report, null, 2) + "\n", "utf8");
 
-// 「最新の基準値」への固定ポインタ（migration検証で使う）
+// 「最新の基準値」への固定ポインタ（Phase 9 の検証で使う）
 writeFileSync(
   join(BACKUP_ROOT, "LATEST_BASELINE.txt"),
   `${baselinePath}\n`,

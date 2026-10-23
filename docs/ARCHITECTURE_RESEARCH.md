@@ -1,3 +1,5 @@
+> Historical research snapshot dated 2026-08-22. External project descriptions and proposed architecture below are not a current release specification. See [../README.md](../README.md) for shipped behavior.
+
 # 選択的想起アーキテクチャ設計調査: 4プロジェクト比較
 
 作成日: 2026-08-22

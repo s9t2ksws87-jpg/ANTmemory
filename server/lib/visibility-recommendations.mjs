@@ -1,7 +1,7 @@
 /**
- * ANTmemory Visibility Recommendations（ANTmemory 所有コード）
+ * ANTmemory recall Visibility Recommendations（ANTmemory 所有コード）
  *
- * ANTmemoryでは自動昇降格を行わない（「参照されない＝不要」ではないため）。
+ * recallでは自動昇降格を行わない（「参照されない＝不要」ではないため）。
  * システムは推奨を算出するだけで、適用は人間が promote_memory で行う。
  * 推奨の根拠（usage統計）を必ず添付し、説明可能にする。
  */
@@ -14,14 +14,14 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 let _db = null;
 async function ensureDb() {
   if (!_db) {
-    const loaded = await import(pathToFileURL(path.join(HERE, "upstream.mjs")).href);
-    const u = await loaded.loadUpstream();
+    const loaded = await import(pathToFileURL(path.join(HERE, "core.mjs")).href);
+    const u = await loaded.loadCore();
     _db = u.db.getDb();
   }
   return _db;
 }
 
-// 閾値（検証コーパスでの実測後に調整）
+// 閾値（実測後に調整。design notes Phase Recall-7）
 const THRESHOLDS = {
   hotDays: 30,       // 直近N日以内に参照があること
   hotAccess: 5,      // 累計M回以上参照 かつ 直近N日以内に参照 → hot候補
@@ -47,7 +47,7 @@ export async function getRecommendations() {
   // hot候補: active + warm + 累計5回以上参照 かつ 直近30日以内にも参照
   // 注: memory_usage.access_count は累積値であり「直近N日の回数」は保持しない。
   //     直近N日の回数を正しく数えるには参照時刻のイベント集計（memory_recall_log 等）が要るため
-  //     ANTmemoryでは「累計回数 + 直近アクセスの新しさ」を条件とする（仕様と実装の一致を優先）。
+  //     recallでは「累計回数 + 直近アクセスの新しさ」を条件とする（仕様と実装の一致を優先）。
   const hotCands = db
     .prepare(
       `SELECT c.id, c.topic, c.importance,

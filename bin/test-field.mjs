@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * 4エージェント実地試験（隔離ストア）
+ * Phase Recall-9: 4エージェント実地試験（隔離ストア）
  *
  * シナリオ:
- *   1. 通常タスク相当: 4クライアント同時書込 → 選択的想起検索（Level0-1）
+ *   1. 通常タスク相当: 4クライアント同時書込 → recall検索（Level0-1）
  *   2. 長時間タスク相当: retrieval session での既読ペナルティ
  *   3. 継続作業相当: supersede チェーン + Active-first
  *   4. 履歴深掘り: recall_deep（cold/archive含む）
@@ -20,7 +20,7 @@ import { DatabaseSync } from "node:sqlite";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = join(ROOT, "bin");
 
-const WS = "field-test";
+const WS = "recall-field-test";
 let passed = 0, failed = 0;
 const check = (name, ok, detail = "") => {
   if (ok) { passed++; console.log(`PASS ${name}`); }
@@ -42,12 +42,12 @@ const { StdioClientTransport } = await import(
 );
 
 async function openAs(clientName, extraEnv = {}) {
-  const c = new Client({ name: `field-${clientName}`, version: "1.0.0" });
+  const c = new Client({ name: `recallfield-${clientName}`, version: "1.0.0" });
   await c.connect(new StdioClientTransport({
     command: process.execPath,
     args: [join(BIN, "ant-memory.mjs")],
     cwd: ROOT,
-    env: { ...process.env, ANT_MEMORY_ROOT: ROOT, ANT_MEMORY_WORKSPACE: WS, ANT_MEMORY_CLIENT: clientName, ...extraEnv },
+    env: { ...process.env, ANT_MEMORY_ROOT: ROOT, ANT_MEMORY_WORKSPACE: WS, ANT_MEMORY_CLIENT: clientName, ANT_MEMORY_ADVANCED_TOOLS: "1", ...extraEnv },
   }));
   return c;
 }
@@ -57,8 +57,8 @@ const allIds = [];
 let writeErrors = [];
 
 try {
-  // ── シナリオ1: 通常タスク（4クライアント同時書込 + 選択的想起検索）────────────────
-  console.log("シナリオ1: 通常タスク（同時書込 + 選択的想起検索）");
+  // ── シナリオ1: 通常タスク（4クライアント同時書込 + recall検索）────────────────
+  console.log("シナリオ1: 通常タスク（同時書込 + recall検索）");
   for (const name of ["claude-code", "codex", "antigravity"]) clients.set(name, await openAs(name));
   clients.set("hermes-A", await openAs("hermes", { ANT_MEMORY_MODEL: "model/alpha", ANT_MEMORY_PROVIDER: "prov-a" }));
   clients.set("hermes-B", await openAs("hermes", { ANT_MEMORY_MODEL: "model/beta", ANT_MEMORY_PROVIDER: "prov-b" }));
@@ -90,12 +90,12 @@ try {
 
   await new Promise((r) => setTimeout(r, 8000)); // 埋め込み生成待ち
 
-  // 選択的想起検索（Level0-1）
+  // recall検索（Level0-1）
   const s1 = text(await clients.get("claude-code").callTool({
     name: "search_context",
     arguments: { query: "軍制の編成 術兵の訓練", search_mode: "bm25", min_score: 0, top_k: 10 },
   }));
-  check("S1: 選択的想起検索（Level0-1）が正常動作", /### \[score/.test(s1) && s1.length > 0);
+  check("S1: recall検索（Level0-1）が正常動作", /### \[relative_score:/.test(s1) && s1.length > 0, s1.slice(0, 200));
 
   // ── シナリオ2: 長時間タスク（session既読ペナルティ）──────────────────────
   console.log("シナリオ2: 長時間タスク（retrieval session）");
@@ -103,10 +103,10 @@ try {
   const sid = bs.match(/`([0-9a-f-]{36})`/)?.[1];
   check("S2: セッション開始", Boolean(sid));
   await clients.get("codex").callTool({
-    name: "search_context", arguments: { query: "軍制の編成 術兵の訓練", search_mode: "bm25", min_score: 0, session_id: sid, max_results: 5, top_k: 10 },
+    name: "search_context", arguments: { query: "軍制の編成 術兵の訓練", search_mode: "bm25", min_score: 0, session_id: sid, top_k: 10 },
   });
   const s2 = text(await clients.get("codex").callTool({
-    name: "search_context", arguments: { query: "実地試験", search_mode: "bm25", min_score: 0, session_id: sid, max_results: 5, top_k: 10 },
+    name: "search_context", arguments: { query: "実地試験", search_mode: "bm25", min_score: 0, session_id: sid, top_k: 10 },
   }));
   check("S2: 既読ペナルティが機能する", /既読/.test(s2), s2.slice(-150));
 

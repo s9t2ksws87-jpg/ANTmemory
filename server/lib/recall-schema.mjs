@@ -1,6 +1,6 @@
 /**
- * 選択的想起スキーマ確保（migrate-recall-schema.mjs と同じ定義・冪等）。新規DBにも対応。
- * サーバー起動時に呼ばれ、migration 未実施のDBでも 選択的想起機能が動くようにする。
+ * recall スキーマ確保（migrate-recall-schema.mjs と同じ定義・冪等）。新規DBにも対応。
+ * サーバー起動時に呼ばれ、migration 未実施のDBでも recall 機能が動くようにする。
  */
 
 import path from "node:path";
@@ -9,8 +9,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 export async function ensureRecallSchema() {
-  const loaded = await import(pathToFileURL(path.join(HERE, "upstream.mjs")).href.replaceAll("\\", "/"));
-  const db = (await loaded.loadUpstream()).db.getDb();
+  const loaded = await import(pathToFileURL(path.join(HERE, "core.mjs")).href.replaceAll("\\", "/"));
+  const db = (await loaded.loadCore()).db.getDb();
   db.exec(`
 CREATE TABLE IF NOT EXISTS memory_visibility (
   chunk_id    TEXT PRIMARY KEY,

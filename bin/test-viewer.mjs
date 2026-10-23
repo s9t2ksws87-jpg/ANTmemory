@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * ビューアの検証
+ * Phase 6: ビューア audit の検証
  *
  * - 127.0.0.1 のみでリッスン（LANの他端末からアクセス不可）
  * - CORS ヘッダーが外部オリジンを許可しない
@@ -33,27 +33,28 @@ const { Client } = await import(
 const { StdioClientTransport } = await import(
   pathToFileURL(join(ROOT, "server", "node_modules", "@modelcontextprotocol", "sdk", "dist", "esm", "client", "stdio.js")).href
 );
-const WS = "viewer-test";
+const WS = "phase6-viewer-test";
 {
-  const client = new Client({ name: "viewer-setup", version: "1.0.0" });
+  const client = new Client({ name: "phase6-setup", version: "1.0.0" });
   await client.connect(new StdioClientTransport({
     command: process.execPath, args: [join(BIN, "ant-memory.mjs")], cwd: ROOT,
     env: { ...process.env, ANT_MEMORY_ROOT: ROOT, ANT_MEMORY_WORKSPACE: WS, ANT_MEMORY_CLIENT: "hermes" },
   }));
+  const text = (r) => (r.content ?? []).map((c) => c.text).join("\n");
   await client.callTool({
     name: "write_context",
     arguments: {
-      topic: "viewer: XSS試験",
+      topic: "phase6: XSS試験",
       content: '<script>window.__xss=true</script><img src=x onerror="window.__xss2=true">',
-      tags: ["viewer"],
+      tags: ["phase6"],
     },
   });
   await client.callTool({
     name: "write_context",
     arguments: {
-      topic: "viewer: ハイフン語の記憶",
+      topic: "phase6: ハイフン語の記憶",
       content: "ant-memory プロジェクトの説明。ミュウの試験も含む。",
-      tags: ["viewer"],
+      tags: ["phase6"],
     },
   });
   await client.close();
@@ -98,7 +99,7 @@ try {
   }
 
   // 3. CORS ヘッダー
-  await (await fetch(`http://127.0.0.1:${port}/api/workspaces`)).json();
+  const wsData = (await (await fetch(`http://127.0.0.1:${port}/api/workspaces`)).json());
   const corsHeader = (await fetch(`http://127.0.0.1:${port}/api/workspaces`)).headers.get("access-control-allow-origin");
   check("CORS が * を許可しない", corsHeader !== "*", `header=${corsHeader}`);
 
@@ -106,6 +107,10 @@ try {
   const memUrl = `http://127.0.0.1:${port}/api/memories?workspace=${encodeURIComponent(WS)}&q=${encodeURIComponent("ant-memory")}&limit=50`;
   const memData = (await (await fetch(memUrl)).json());
   check("FTS5検索でハイフン入り語がヒット", memData.memories?.some((m) => /ハイフン語/.test(m.topic)), `total=${memData.total}`);
+  const visibleMem = memData.memories?.find((m) => /ハイフン語/.test(m.topic));
+  check("Viewer一覧APIがstatus/visibility/currentを返す",
+    visibleMem?.status === "active" && visibleMem?.visibility === "warm" && visibleMem?.current === true,
+    JSON.stringify(visibleMem));
 
   // 5. FTS5 検索: 日本語
   const jpData = (await (await fetch(`http://127.0.0.1:${port}/api/memories?workspace=${encodeURIComponent(WS)}&q=${encodeURIComponent("ミュウ")}&limit=50`)).json());
@@ -128,17 +133,8 @@ try {
   const html = await (await fetch(`http://127.0.0.1:${port}/index.html`)).text();
   check("index.html に外部CDN依存がない", !/https?:\/\/(fonts|cdn)\./.test(html));
 } finally {
-  // Windows/libuv では child.kill() の直後に process.exit() すると、stdio の非同期
-  // handle が closing 中のまま強制終了され assertion になることがある。
-  // 子プロセスの exit を待ってからテストプロセスを自然終了させる。
-  if (proc.exitCode === null && proc.signalCode === null) {
-    const exited = new Promise((resolveExit) => proc.once("exit", resolveExit));
-    proc.kill();
-    await Promise.race([exited, sleep(3000)]);
-  }
-  proc.stdout.destroy();
-  proc.stderr.destroy();
+  proc.kill();
 }
 
 console.log(`\n結果: ${passed} passed / ${failed} failed`);
-process.exitCode = failed ? 1 : 0;
+process.exit(failed ? 1 : 0);

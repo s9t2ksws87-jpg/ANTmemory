@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Usage Tracking / Retrieval Sessionの試験（隔離ストア）
+ * Phase Recall-5: Usage Tracking / Retrieval Session の試験（隔離ストア）
  *
  * - begin_retrieval_session で session_id が発行される
  * - search_context(session_id) で既読記憶の順位が下がる
@@ -13,18 +13,21 @@
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import fs from "node:fs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = join(ROOT, "bin");
 
-const WS = "usage-session-test";
+const WS = "recall-usage-test";
+const dbPath = join(ROOT, "stores", WS, "store.db");
+for (const p of [dbPath, dbPath + "-wal", dbPath + "-shm"]) try { fs.rmSync(p, { force: true }); } catch {}
 let passed = 0, failed = 0;
 const check = (name, ok, detail = "") => {
   if (ok) { passed++; console.log(`PASS ${name}`); }
   else { failed++; console.error(`FAIL ${name}${detail ? ` — ${detail}` : ""}`); }
 };
 const text = (r) => (r.content ?? []).map((c) => c.text).join("\n");
-const topicsOf = (t) => [...t.matchAll(/### \[score:[^\]]+\] ([^\n]+)/g)].map((m) => m[1]);
+const topicsOf = (t) => [...t.matchAll(/### \[relative_score:[^\]]+\] ([^\n]+)/g)].map((m) => m[1]);
 
 const { Client } = await import(
   pathToFileURL(join(ROOT, "server", "node_modules", "@modelcontextprotocol", "sdk", "dist", "esm", "client", "index.js")).href
@@ -33,35 +36,13 @@ const { StdioClientTransport } = await import(
   pathToFileURL(join(ROOT, "server", "node_modules", "@modelcontextprotocol", "sdk", "dist", "esm", "client", "stdio.js")).href
 );
 
-const client = new Client({ name: "usage-session", version: "1.0.0" });
-await client.connect(new StdioClientTransport({
-  command: process.execPath,
-  args: [join(BIN, "ant-memory.mjs")],
-  cwd: ROOT,
-  env: { ...process.env, ANT_MEMORY_ROOT: ROOT, ANT_MEMORY_WORKSPACE: WS, ANT_MEMORY_CLIENT: "hermes" },
-}));
-
-// 毎回クリーンな状態で計測する（テスト用隔離ストアのみ・接続前にshellで削除推奨）
-{
-  const fs = await import("node:fs");
-  try {
-    fs.rmSync(join(ROOT, "stores", WS), { recursive: true, force: true, maxRetries: 3 });
-  } catch {
-    // サーバーがDBを掴んでいる場合はスキップ（追記モードで続行）
-    process.stderr.write("[usage-session] cleanup skipped (store busy)\n");
-  }
-  await client.close().catch(() => {});
-}
-const client2 = new Client({ name: "usage-session-2", version: "1.0.0" });
+const client2 = new Client({ name: "recallusage2", version: "1.0.0" });
 await client2.connect(new StdioClientTransport({
   command: process.execPath,
   args: [join(BIN, "ant-memory.mjs")],
   cwd: ROOT,
-  env: { ...process.env, ANT_MEMORY_ROOT: ROOT, ANT_MEMORY_WORKSPACE: WS, ANT_MEMORY_CLIENT: "hermes" },
+  env: { ...process.env, ANT_MEMORY_ROOT: ROOT, ANT_MEMORY_WORKSPACE: WS, ANT_MEMORY_CLIENT: "hermes", ANT_MEMORY_ADVANCED_TOOLS: "1" },
 }));
-// 以降は client2 を使う
-void client;
-
 try {
   for (let i = 0; i < 5; i++) {
     await client2.callTool({
@@ -88,12 +69,12 @@ try {
   })));
   check("1回目は全候補が返る", s1.length >= 4, `${s1.length}件`);
 
-  // 1回目の上位3件だけ既読にする（max_resultsで部分閲覧をシミュレート）
+  // 1回目の上位3件だけ既読にする（top_kで部分閲覧をシミュレート）
   const firstSeen = s1.slice(0, 3);
   const sid2 = text(await client2.callTool({ name: "begin_retrieval_session", arguments: {} }))
     .match(/`([0-9a-f-]{36})`/)[1];
   await client2.callTool({
-    name: "search_context", arguments: { ...baseQuery, session_id: sid2, max_results: 3, top_k: 10 },
+    name: "search_context", arguments: { ...baseQuery, session_id: sid2, top_k: 3 },
   });
 
   // 2回目: 既読(上位3)が末尾へ回り、未読が先頭に来る
@@ -107,16 +88,16 @@ try {
     firstSeen.every((t) => tail2.includes(t)) && !head2.some((t) => firstSeen.includes(t)),
     JSON.stringify({ firstSeen, order: s2 }));
 
-  // max_resultsと併用: 新しいセッションで既読を下げた上で未読だけ見られる
+  // top_kと併用: 新しいセッションで既読を下げた上で未読だけ見られる
   const sid3 = text(await client2.callTool({ name: "begin_retrieval_session", arguments: {} }))
     .match(/`([0-9a-f-]{36})`/)[1];
   await client2.callTool({
-    name: "search_context", arguments: { ...baseQuery, session_id: sid3, max_results: 3, top_k: 10 },
+    name: "search_context", arguments: { ...baseQuery, session_id: sid3, top_k: 3 },
   });
   const s3 = topicsOf(text(await client2.callTool({
-    name: "search_context", arguments: { ...baseQuery, session_id: sid3, max_results: 2, top_k: 10 },
+    name: "search_context", arguments: { ...baseQuery, session_id: sid3, top_k: 2 },
   })));
-  check("既読ペナルティ+max_results で未読が優先表示される",
+  check("既読ペナルティ+top_k で未読が優先表示される",
     s3.length <= 2 && !firstSeen.includes(s3[0]), JSON.stringify(s3));
 
   // usage記録の確認

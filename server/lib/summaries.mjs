@@ -1,5 +1,5 @@
 /**
- * ANTmemory Summary Layer（ANTmemory 所有コード）
+ * ANTmemory recall Summary Layer（ANTmemory 所有コード）
  *
  * 原文は chunks.content が正本。ここで生成する summary は常に派生データであり、
  * source_hash（元本文のSHA256）が一致しないものは無効として扱う。
@@ -19,8 +19,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 let _db = null;
 async function ensureDb() {
   if (!_db) {
-    const loaded = await import(pathToFileURL(path.join(HERE, "upstream.mjs")).href);
-    const u = await loaded.loadUpstream();
+    const loaded = await import(pathToFileURL(path.join(HERE, "core.mjs")).href);
+    const u = await loaded.loadCore();
     _db = u.db.getDb();
   }
   return _db;
@@ -182,7 +182,7 @@ export async function backfillSummaries(limit = 100) {
       await generateSummaryFor(id);
       done += 1;
     } catch (e) {
-      process.stderr.write(`[summary] skip ${id}: ${e.message}\n`);
+      process.stderr.write(`[recall-summary] skip ${id}: ${e.message}\n`);
     }
   }
   return done;

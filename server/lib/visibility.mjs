@@ -1,5 +1,5 @@
 /**
- * ANTmemory Visibility層（ANTmemory 所有コード）
+ * ANTmemory recall Visibility層（ANTmemory 所有コード）
  *
  * visibility（hot/warm/cold/archive）を importance と完全に独立して管理する。
  * 変更はすべて監査イベント（memory_events, actor+reason必須）として残す。
@@ -15,8 +15,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 let _db = null;
 async function ensureDb() {
   if (!_db) {
-    const loaded = await import(pathToFileURL(path.join(HERE, "upstream.mjs")).href);
-    const u = await loaded.loadUpstream();
+    const loaded = await import(pathToFileURL(path.join(HERE, "core.mjs")).href);
+    const u = await loaded.loadCore();
     _db = u.db.getDb();
   }
   return _db;

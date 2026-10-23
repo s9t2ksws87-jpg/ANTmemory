@@ -1,167 +1,86 @@
-# ant-memory の使い方（エージェント共通ルール）
+# ANTmemory 2.0の使い方
 
-複数のAIエージェント（Claude Code / Codex / Antigravity / Hermes）が、同じ作業空間の記憶を共有するための永続メモリ。作業空間ごとにデータベースが物理的に分かれているので、別プロジェクトの記憶が混ざることはありません。
+[English](MEMORY_USAGE.md) · [導入と作業空間の選択](../README.ja.md)
 
-保存先: `<ANTMEMORY_ROOT>\stores\<ワークスペース名>\store.db`
+## 作業前に検索する
 
-English version: [`MEMORY_USAGE.md`](MEMORY_USAGE.md)
-
----
-
-## 1. 使えるツール
-
-| ツール | 用途 |
-|---|---|
-| `search_context` | 作業前に引く。既定では現在有効な記憶の metadata + short summary のみ返す。`full_content=true` で本文ごと返す |
-| `write_context` | 決定事項・発見・ユーザーの好みを残す |
-| `read_context` | `id` で全文を取り出す |
-| `list_context` | 何が入っているかの一覧（本文なし・棚卸し用） |
-| `supersede_context` | 記録の置き換え。旧記録は superseded になり本文は残る（reason 必須） |
-| `retract_context` | 記録を撤回済みにする。本文は消えない（reason 必須） |
-| `change_importance` | 重要度の変更（reason 必須） |
-| `restore_context` | superseded/retracted を active へ戻す（reason 必須） |
-| `get_context_history` | 記録の変更履歴（作成・訂正・置換）を時系列表示 |
-| `get_successor_context` | 置換チェーンを辿って現行版を確認 |
-| `promote_memory` | visibility（hot/warm/cold/archive）の変更。importanceと独立（reason 必須） |
-| `get_memory_summary` | short/detailed 要約の取得。原文は read_context で取得 |
-| `recall_deep` | cold/archive も含む段階的深掘り。Stage1=候補一覧、Stage2=resolve+idsで本文 |
-| `begin_retrieval_session` | 検索セッション開始。session_id を検索に渡すと既読の順位が下がる |
-| `get_recall_log` | 「なぜ思い出したか」の想起履歴 |
-| `get_visibility_recommendations` | usage統計に基づくvisibility変更の推奨（自動適用はされない） |
-| `get_state` / `set_state` | 作業の途中状態、進捗フラグ、カウンタ |
-
-`delete_context`（物理削除）は使いません。呼び出しても拒否され、`supersede_context` / `retract_context` が案内されます。更新は `supersede_context`、撤回は `retract_context` を使い、どちらも理由を記録します。
-
-### 選択的想起の検索パラメータ
+タスク開始時に `search_context` で関連する決定・制約・教訓を検索します。見つからなければ語を変えて2〜3回検索します。検索結果は過去の記録であり、その内容が現在も正しいと確定したわけではありません。
 
 ```text
-search_context(
-  query: "...",
-  include_history: true,   // superseded/retracted/expired も含める
-  include_hidden: true,    // cold/archive も含める
-  full_content: true,      // 本文全文を返す（既定は summary のみ）
-  max_results: 5,          // 返却件数の上限
-  token_budget: 500,       // 返却量の上限（概算token）
-  session_id: "...",       // セッション内既読の順位を下げる
-)
+search_context(query="公開版 更新方針", top_k=6, token_budget=1200)
+read_context(id="<検索で得たID>")
 ```
 
----
+通常検索はactiveかつhot/warmのmetadataと短い要約です。必要時に `include_history=true`、`include_hidden=true`、`full_content=true` を指定します。件数指定は `top_k` のみで、`max_results` は旧仕様です。token上限は概算で、切詰め時には通知があります。`relative_score` は候補内の相対値です。
 
-## 2. いつ検索するか
+`read_context` ではRaw全文、status、visibility、current、作成/更新日時、存在時のsource_refを確認できます。棚卸しは `list_context` です。重要な判断では元の根拠を再観測します。
 
-タスクを始める前に、過去の判断が関係しそうなら `search_context` を引きます。特に次の場合です。
+## 次のエージェントが必要とすることを残す
 
-- ユーザーが「前に言ったやつ」「いつもの」「この前の続き」と言ったとき
-- 設定・仕様・命名・文体など、過去に決めた可能性があることに触れるとき
-- 同じファイルや同じ題材を再び触るとき
-- 前回どこまで進んだか分からないとき（`get_state` も併用）
-
-検索は1回で諦めず、必要なら語を変えて2〜3回試します。`search_mode` は既定の `hybrid`（キーワード＋意味検索）で構いません。
-
-`min_score` は「最良ヒットを1.0としたときの相対的な近さ」で足切りします。広く見たいときは `min_score` を下げるか `top_k` を増やします。
-
-### 検索のコツ
-
-- キーワード検索は3文字以上の語が安定します。索引が3文字単位（trigram）のためです
-- 文章のまま検索して構いません。`hybrid` では意味検索も働きます
-- ハイフンを含む語（`ant-memory` など）はそのまま検索できます
-
----
-
-## 3. いつ書くか
-
-「次に来たエージェントが知らないと同じ質問・調査を繰り返す」ことは記録します。
-
-書くべきもの:
-
-- ユーザーが下した決定と、その理由
-- ユーザーの好み・NG・継続的な制約
-- 試して失敗したこと
-- リポジトリにまだ明示されていない持続的なプロジェクト知識
-- 環境・ツール固有の癖や手順
-- 長い作業の区切りごとの現在地（`set_state` と併用）
-
-書かないもの:
-
-- リポジトリやファイルを読めば分かること
-- その場限りの些末なやりとり
-- パスワード・APIキー・トークンなどの秘密情報
-- 未確定の憶測を確定事実のように書いたもの
-
----
-
-## 4. 書き方の規約
+ユーザーの決定と理由、継続的な好み・NG、失敗と教訓、環境の癖、長期作業の重要な現在地を保存します。秘密情報、その場限りの会話、管理されたファイルを読めば分かることは残しません。
 
 ```text
 write_context(
-  topic:      "何についての記録か（短く具体的に）",
-  content:    "本文。後で読んで意味が通るように、背景と結論を含める",
-  agent:      "claude-code" | "codex" | "antigravity" | "hermes",
-  tags:       ["分類", "作品名", "対象"],
-  importance: "low" | "medium" | "high" | "critical",
-  ttl_days:   30
+  topic="公開時に保持する境界",
+  content="決定と理由、観測した範囲、残っている不明点。",
+  tags=["公開", "決定"],
+  importance="high",
+  source_ref="commit:<commit-id>"
 )
 ```
 
-- `topic`: 「第三話の視点」のように具体的にする。「メモ」「作業」だけの名前は避ける
-- `content`: 単語の羅列ではなく、決定 + 理由をセットで書く。後から読んでも意味が復元できる文にする
-- `agent`: 正本は接続元（`ANT_MEMORY_CLIENT`）。異なる名前を申告すると接続元へ正規化されるため、通常は省略してよい
-- `tags`: 後で絞り込む鍵。作品名・話数・分野などを入れる
-- `importance`:
-  - `critical` … 破ると作品や作業が壊れる大原則
-  - `high` … 明示的に決めた持続的な方針
-  - `medium` … 通常の作業記録（既定）
-  - `low` … 参考程度のメモ
-- `ttl_days`: 一時的な情報に付ける。恒久的な決定には付けない
+`source_ref` は後からRawへ戻るための取手で、参照先を自動取得・検証する機能ではありません。ファイル・コミット・実験・会話・URLなどを指定します。一時情報だけに `ttl_days` を付けます。記録主体は `ANT_MEMORY_CLIENT` で決まるため、書込に `agent` / `actor` を入力しません。検索時の `agent` filterは引き続き使えます。
 
-### 内容が変わったとき
+## 消さずに更新する
 
-物理削除はせず、履歴として訂正します。
+| 状況 | 操作 |
+|---|---|
+| 軽微訂正 | `correct_context(id, 変更する項目..., reason)` |
+| 方針・内容全体の置換 | `supersede_context(old_id, topic, content, metadata..., reason)` |
+| 誤記録の撤回 | `retract_context(id, reason)` |
+| 重要度変更 | `change_importance(id, importance, reason)` |
+| hot/warm/cold/archiveの変更 | `set_visibility(id, visibility, reason)` |
+| successorのないretracted/expiredを戻す | `restore_context(id, reason)` |
+| 変更履歴と関係の確認 | `get_context_history(id)` |
 
-- 方針変更など記録の置き換え → `supersede_context`
-- 記録自体が誤りだった → `retract_context`
-- 重要度だけ変わった → `change_importance`
-- superseded/retracted から戻す → `restore_context`
-- 変更履歴を見る → `get_context_history`
+訂正では新しい版を作り、省略した題名・本文・tags・importance・source_ref・元の絶対期限を継承します。期限を解除する場合は `clear_ttl=true` を使います。`ttl_days` とは同時指定できません。全体置換は新記録のmetadataを意識して指定します。
 
-```text
-old = search_context("文体の方針")
-supersede_context(old_id, 新topic, 新content, reason: "ユーザーがB案に変更")
-get_successor_context(old_id)
-search_context("文体の方針", include_history=true)
-```
+successorのあるsuperseded記録は現行へ戻せません。削除して再作成する運用は禁止です。物理削除ツールは公開しません。visibilityとimportanceは独立しており、`critical + cold` も有効です。
 
-検索は既定で現在有効な記憶のみを返します。過去版・撤回済み・期限切れを見るときは `include_history: true` を付けます。
+## 現在状態と全体目的を共有する
 
----
+stateは `get_state(key)`、`list_state(query=...)`、`set_state(key, value)` の3ツールで扱います。stateは現在状態の共有黒板で、経緯や決定理由は記憶へ残します。
 
-## 5. 作業状態の受け渡し
-
-長い作業を中断・再開するとき、またはエージェント間で引き継ぐとき:
+全体目的には通常のキー `goal.current` を選べます。
 
 ```text
-set_state("現在地", { 話数: 3, 段階: "初稿完了", 次: "推敲" })
-get_state("現在地")
+set_state(key="goal.current", value={"purpose":"合意した公開版を届ける", "memory_id":"<決定のID>"})
+get_state(key="goal.current")
 ```
 
-`state` は上書き式の変数です。履歴を残したいことは `write_context` を使います。
+サーバーが自動的にこのキーを取得・注入するわけではありません。エージェントが読み、作業に使う必要があります。この公開版には目的の強制適用、自動鮮度判定、key付き記憶upsert、context revisionプロトコルは含みません。
 
----
+同時更新の取りこぼしを防ぐ場合は現在のJSONを読み、その値を渡します。
 
-## 6. 運用メモ（人間向け）
-
-- サーバー本体: `<ANTMEMORY_ROOT>\server`
-- 起動ラッパ: `<ANTMEMORY_ROOT>\bin\ant-memory.mjs`
-- どのワークスペースと判定されたかの確認:
-
-```powershell
-cd <確認したいフォルダ>
-node <ANTMEMORY_ROOT>\bin\ant-memory.mjs --where
+```text
+set_state(key="goal.current", expected_value=<直前に読んだ値>, value=<新しい値>)
 ```
 
-- 起動履歴のログ: `<ANTMEMORY_ROOT>\logs\launcher.log`
-- ワークスペース名とパスの対応表: `<ANTMEMORY_ROOT>\runtime\workspaces.json`（実行時に自動更新）
-- 判定を手動で固定したいときは環境変数 `ANT_MEMORY_WORKSPACE` を指定する
+一致しなければ `CAS_CONFLICT` です。再読して調整し、無条件で上書きしません。キー探索は `list_state(query="goal")` です。別名の `search_state` / `compare_and_set_state` はadvanced専用です。
 
-データベース、runtime mapping、ログ、backup、credentialはGitへcommitしないでください。詳細は [`../SECURITY.md`](../SECURITY.md) を参照してください。
+## UNKNOWNを残して再観測する
+
+`observe_context` で観測の一段階を保存します。観測で具体的になった不明点をUNKNOWNとして分離します。まだ何も観測していない可能性まで記録する必要はありません。
+
+```text
+observe_context(kind="unknown", topic="起動失敗の原因", content="何を観測し、何が分からないか。", source_ref="experiment:start-1")
+observe_context(kind="hypothesis", parent_id="<UNKNOWNのID>", topic="原因の仮説", content="仮の説明と検証方法。")
+observe_context(kind="observation", parent_id="<UNKNOWNのID>", topic="再現試験の結果", content="得られた根拠と観測範囲。", source_ref="experiment:start-2", resolves_unknown=true)
+list_unknowns()
+```
+
+hypothesisの親はUNKNOWNである必要があります。`resolves_unknown=true` は、親UNKNOWNを解決したobservationにだけ付けます。根拠が足りなければ付けません。旧UNKNOWN本文は保持されます。解決済みも見る場合は `list_unknowns(include_resolved=true)`、系譜と出典イベントは `get_context_history` です。
+
+## advanced
+
+通常はREADMEにある16ツールで作業します。保守・診断時だけ `ANT_MEMORY_ADVANCED_TOOLS=1` を明示すると、retrieval session、深掘り想起、想起ログ、要約・可視性診断、successor参照、旧互換aliasが追加されます。古い手順を理由に通常作業をadvancedへ迂回しません。`delete_context` はadvancedでも公開しません。

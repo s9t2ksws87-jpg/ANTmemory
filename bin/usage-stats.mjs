@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * 監査履歴の運用統計の取得
+ * Phase Recall-0: audit運用統計の取得
  *
- * 実DB（stores/ 下の全ワークスペース）を読み取り専用で開き、選択的想起設計に必要な
+ * 実DB（stores/ 下の全ワークスペース）を読み取り専用で開き、recall設計に必要な
  * 運用統計を取得する。書き込みは一切行わない。
  *
- * 取得項目（選択的想起の基準計測）:
+ * 取得項目（docs/ARCHITECTURE_RESEARCH.md Phase Recall-0）:
  * - 平均検索結果件数の母体となる chunk 件数分布
  * - superseded / retracted / expired 比率
  * - 本文長分布（Level分割の効果見積り用）
@@ -23,7 +23,7 @@ const STORES_DIR = join(ROOT, "stores");
 
 const stats = {
   measuredAt: new Date().toISOString(),
-  profile: "audit-history",
+  version: "audit",
   workspaces: [],
 };
 
@@ -107,10 +107,10 @@ stats.totals = totals;
 // 出力
 mkdirSyncSafe();
 function mkdirSyncSafe() {}
-const outPath = join(ROOT, "backups", `usage-stats-${stats.measuredAt.replace(/[:.]/g, "-").slice(0, 19)}.json`);
+const outPath = join(ROOT, "backups", `recall-usage-stats-${stats.measuredAt.replace(/[:.]/g, "-").slice(0, 19)}.json`);
 writeFileSync(outPath, JSON.stringify(stats, null, 2) + "\n", "utf8");
 
-console.log("=== 監査履歴の運用統計 ===");
+console.log("=== audit運用統計 ===");
 console.log(`記憶を持つワークスペース: ${totals.workspacesWithMemory}`);
 console.log(`総chunk数: ${totals.totalChunks}`);
 if (totals.avgHistoryRatioPct !== undefined)
@@ -128,7 +128,7 @@ for (const w of active.sort((a, b) => b.chunkCount - a.chunkCount)) {
 }
 console.log(`\n保存先: ${outPath}`);
 
-// 上位ワークスペースでの検索返却量見積り（選択的想起の効果検証の対象特定）
+// 上位ワークスペースでの検索返却量見積り（recall効果検証の対象特定）
 const top = active.sort((a, b) => b.chunkCount - a.chunkCount)[0];
 if (top?.estReturnCharsPerHit) {
   console.log(`\n最大ワークスペース「${top.workspace}」での1クエリ(top10)返却見積り:`);

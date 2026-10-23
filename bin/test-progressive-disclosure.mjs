@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Progressive Disclosure + Active-first 強化の試験
+ * Phase Recall-4: Progressive Disclosure + Active-first 強化 の試験
  *
  * - search_context 既定返却は Level0-1（metadata + short summary）で raw を含まない
- * - full_content=true で 従来の全文形式（本文ごと）に戻る
+ * - full_content=true で audit 互換（本文ごと）に戻る
  * - read_context(id) 互換性維持・recall_deep で段階的深掘り
  * - 置換チェーンがあっても通常検索で旧版がノイズにならない
  * - include_history=true で旧版と置換理由を取得できる
@@ -11,13 +11,18 @@
  * 実行: node bin/test-progressive-disclosure.mjs
  */
 
+import { rmSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = join(ROOT, "bin");
 
-const WS = "progressive-disclosure-test";
+const WS = "recall-progressive-test";
+const dbPath = join(ROOT, "stores", WS, "store.db");
+for (const p of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
+  try { rmSync(p, { force: true }); } catch {}
+}
 let passed = 0, failed = 0;
 const check = (name, ok, detail = "") => {
   if (ok) { passed++; console.log(`PASS ${name}`); }
@@ -32,12 +37,12 @@ const { StdioClientTransport } = await import(
   pathToFileURL(join(ROOT, "server", "node_modules", "@modelcontextprotocol", "sdk", "dist", "esm", "client", "stdio.js")).href
 );
 
-const client = new Client({ name: "progressive", version: "1.0.0" });
+const client = new Client({ name: "recallprog", version: "1.0.0" });
 await client.connect(new StdioClientTransport({
   command: process.execPath,
   args: [join(BIN, "ant-memory.mjs")],
   cwd: ROOT,
-  env: { ...process.env, ANT_MEMORY_ROOT: ROOT, ANT_MEMORY_WORKSPACE: WS, ANT_MEMORY_CLIENT: "hermes" },
+  env: { ...process.env, ANT_MEMORY_ROOT: ROOT, ANT_MEMORY_WORKSPACE: WS, ANT_MEMORY_CLIENT: "hermes", ANT_MEMORY_ADVANCED_TOOLS: "1" },
 }));
 
 try {
@@ -49,7 +54,7 @@ try {
   ].join("");
   const w1 = await client.callTool({
     name: "write_context",
-    arguments: { topic: "progressive: 文体方針 初版", content: longBody1, tags: ["progressive"], importance: "high" },
+    arguments: { topic: "recallprog: 文体方針 初版", content: longBody1, tags: ["recallprog"], importance: "high" },
   });
   const oldId = text(w1).match(/id=`([0-9a-f]{10})`/i)[1];
 
@@ -57,10 +62,10 @@ try {
     name: "supersede_context",
     arguments: {
       old_id: oldId,
-      topic: "progressive: 文体方針 改訂版",
+      topic: "recallprog: 文体方針 改訂版",
       content: "文体方針を改訂。常体（だ・である）へ変更する。新しい理由として、作品トーンの重厚感を優先する判断があった。",
       reason: "作品トーン変更のため",
-      tags: ["progressive"], importance: "high",
+      tags: ["recallprog"], importance: "high",
     },
   });
   const newId = text(s).match(/新記録 id=`([0-9a-f]{10})`/i)?.[1];
@@ -79,7 +84,7 @@ try {
   // 新版のみ表示（旧版は履歴状態で非表示）
   check("通常検索では新版のみ（旧版は出ない）", /改訂版/.test(t1) && !/初版/.test(t1));
 
-  // ── full_content=true で 従来の全文形式 ─────────────────────────────────────
+  // ── full_content=true で audit 互換 ─────────────────────────────────────
   const s2 = await client.callTool({
     name: "search_context",
     arguments: { query: "文体方針", search_mode: "bm25", min_score: 0, full_content: true },

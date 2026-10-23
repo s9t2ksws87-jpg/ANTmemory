@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * 選択的想起スキーマのmigration検証
+ * Phase Recall-MIGRATION: migration検証
  *
- * - 最新の基準値(backups/LATEST_BASELINE.txt)と現在の全DBを照合:
+ * - 最新の Phase 0 基準値(backups/LATEST_BASELINE.txt)と現在の全DBを照合:
  *   chunk件数・ID・本文ハッシュが無欠損・無改変であること
- *   （選択的想起スキーマ移行後に追加されたchunkは許容、欠損・改変は不可）
- * - 全DBで integrity_check=ok / fk違反0 / 監査・選択的想起スキーマ完備を確認
+ *   （recall移行後に追加されたchunkは許容、欠損・改変は不可）
+ * - 全DBで integrity_check=ok / fk違反0 / audit+recallスキーマ完備を確認
  *
  * 実行: node bin/verify-recall-migration.mjs
  */
@@ -21,7 +21,7 @@ const STORES_DIR = join(ROOT, "stores");
 
 const pointer = join(ROOT, "backups", "LATEST_BASELINE.txt");
 if (!existsSync(pointer)) {
-  console.error("基準値ポインタがない: backups/LATEST_BASELINE.txt（capture-baseline.mjs を先に実行）");
+  console.error("基準値ポインタがない: backups/LATEST_BASELINE.txt（Phase 0 を先に実行）");
   process.exit(1);
 }
 const baseline = JSON.parse(readFileSync(readFileSync(pointer, "utf8").trim(), "utf8"));
@@ -58,20 +58,20 @@ for (const entry of baseline.stores) {
     }
     check(`${entry.workspace}: 既存chunk無欠損・無改変`, bad.length === 0, bad.slice(0, 3).join(", "));
 
-    // 監査スキーマ
-    const auditTableCount = db.prepare(
+    // audit スキーマ
+    const audit = db.prepare(
       "SELECT COUNT(*) c FROM sqlite_master WHERE type='table' AND name IN ('memory_events','memory_relations','memory_lifecycle')",
     ).get().c;
-    check(`${entry.workspace}: 監査スキーマ完備`, auditTableCount === 3);
+    check(`${entry.workspace}: auditスキーマ完備`, audit === 3);
 
-    // 選択的想起スキーマ
-    const recallTableCount = db.prepare(
+    // recall スキーマ
+    const recall = db.prepare(
       "SELECT COUNT(*) c FROM sqlite_master WHERE type='table' AND name IN ('memory_visibility','memory_summaries','memory_usage','retrieval_sessions','retrieval_session_seen','memory_recall_log')",
     ).get().c;
-    check(`${entry.workspace}: 選択的想起スキーマ完備`, recallTableCount === 6, `tables=${recallTableCount}`);
+    check(`${entry.workspace}: recallスキーマ完備`, recall === 6, `tables=${recall}`);
 
     // visibility初期付与の確認（chunkがある場合）
-    if (rows.length > 0 && recallTableCount === 6) {
+    if (rows.length > 0 && recall === 6) {
       const visCount = db.prepare("SELECT COUNT(*) c FROM memory_visibility").get().c;
       check(`${entry.workspace}: 全chunkにvisibility初期値あり`, visCount >= rows.length,
         `vis=${visCount} chunks=${rows.length}`);

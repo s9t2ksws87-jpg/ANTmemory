@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Token Budgetの試験（隔離ストア）
+ * Phase Recall-2: Token Budget の試験（隔離ストア）
  *
- * - max_results で返却件数を制限できる
+ * - top_k で返却件数を制限できる
  * - token_budget で返却量（概算token）を制限できる
  * - budget超過時は低関連（末尾側）が先に落ちる
  * - 何件切り詰めたかが返却末尾に明示される
@@ -13,11 +13,14 @@
 
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import fs from "node:fs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = join(ROOT, "bin");
 
-const WS = "token-budget-test";
+const WS = "recall-budget-test";
+const dbPath = join(ROOT, "stores", WS, "store.db");
+for (const p of [dbPath, dbPath + "-wal", dbPath + "-shm"]) try { fs.rmSync(p, { force: true }); } catch {}
 let passed = 0, failed = 0;
 const check = (name, ok, detail = "") => {
   if (ok) { passed++; console.log(`PASS ${name}`); }
@@ -37,12 +40,12 @@ const { StdioClientTransport } = await import(
   pathToFileURL(join(ROOT, "server", "node_modules", "@modelcontextprotocol", "sdk", "dist", "esm", "client", "stdio.js")).href
 );
 
-const client = new Client({ name: "budget", version: "1.0.0" });
+const client = new Client({ name: "recallbudget", version: "1.0.0" });
 await client.connect(new StdioClientTransport({
   command: process.execPath,
   args: [join(BIN, "ant-memory.mjs")],
   cwd: ROOT,
-  env: { ...process.env, ANT_MEMORY_ROOT: ROOT, ANT_MEMORY_WORKSPACE: WS, ANT_MEMORY_CLIENT: "hermes" },
+  env: { ...process.env, ANT_MEMORY_ROOT: ROOT, ANT_MEMORY_WORKSPACE: WS, ANT_MEMORY_CLIENT: "hermes", ANT_MEMORY_ADVANCED_TOOLS: "1" },
 }));
 
 try {
@@ -61,9 +64,9 @@ try {
     await client.callTool({
       name: "write_context",
       arguments: {
-        topic: `budget[${i}]: ${topics[i]}`,
+        topic: `recallbudget[${i}]: ${topics[i]}`,
         content: `${topics[i]}に関する記録です。軍制・編成・術兵・兵站・階級といった語を含む本文その${i + 1}。`.repeat(i === 7 ? 1 : 3),
-        tags: ["budget"], importance: "low",
+        tags: ["recallbudget"], importance: "low",
       },
     });
   }
@@ -77,33 +80,30 @@ try {
   const fullCount = (full.match(/###/g) || []).length;
   check("母体: 4件以上ヒットしている", fullCount >= 4, `hits=${fullCount}`);
 
-  // ── max_results ──────────────────────────────────────────────────────
+  // ── top_k ──────────────────────────────────────────────────────
   const r3 = text(await client.callTool({
-    name: "search_context", arguments: { ...baseQuery, top_k: 20, max_results: 3 },
+    name: "search_context", arguments: { ...baseQuery, top_k: 3 },
   }));
-  check("max_results=3 で件数が3件以下になる", (r3.match(/###/g) || []).length <= 3, `hits=${(r3.match(/###/g) || []).length}`);
-  check("切り詰め通知が返却末尾に含まれる", /切り詰めました/.test(r3), r3.slice(-150));
-
+  check("top_k=3 で件数が3件以下になる", (r3.match(/###/g) || []).length <= 3, `hits=${(r3.match(/###/g) || []).length}`);
   // ── token_budget ─────────────────────────────────────────────────────
-  // Level0-1 の要約が短い環境でも必ず複数件の合計を下回るよう、十分小さい予算を使う。
-  // 切り詰め通知部分を除いた実体で判定する。
-  const budget = 120;
+  // 切り詰め通知部分を除いた実体で判定
+  const budget = 180;
   const rb = text(await client.callTool({
     name: "search_context", arguments: { ...baseQuery, top_k: 20, token_budget: budget },
   }));
   const bodyOnly = rb.replace(/\n\n\([^)]*\)\s*$/, "");
   const usedTokens = estimateTokens(bodyOnly);
-  check(`token_budget=${budget} を大幅超過しない`, usedTokens <= budget + 200,
+  check(`token_budget=${budget} を大幅超過しない`, usedTokens <= budget + 120,
     `used≈${usedTokens}tok`);
-  check("budget超過時の切り詰め通知がある", /token_budget\/max_results により/.test(rb), rb.slice(-180));
+  check("budget超過時の切り詰め通知がある", /token_budgetにより/.test(rb));
 
   // ── 高関連が優先される ────────────────────────────────────────────────
-  // budget=250まで絞っても、最一致の「軍制の編成と術兵」[0] が残ること
+  // budget=200まで絞っても、最一致の「軍制の編成と術兵」[0] が残ること
   const rSmall = text(await client.callTool({
     name: "search_context",
     arguments: { query: "軍制の編成と術兵", search_mode: "bm25", min_score: 0, top_k: 20, token_budget: 250 },
   }));
-  check("高関連記憶が優先的に残る", /budget\[0\]: 軍制の編成と術兵の運用/.test(rSmall),
+  check("高関連記憶が優先的に残る", /recallbudget\[0\]: 軍制の編成と術兵の運用/.test(rSmall),
     rSmall.slice(0, 200));
 
   // ── budget無し時は従来通り（回帰）─────────────────────────────────────

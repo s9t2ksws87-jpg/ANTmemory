@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * 選択的想起スキーマ migration（ANTmemory 所有コード）
+ * Phase Recall-MIGRATION: recall監査スキーマ migration（ANTmemory 所有コード）
  *
- * 既存 chunks を一切変更せず、選択的想起の器を追加する:
+ * 既存 chunks を一切変更せず、recallの器を追加する:
  *   - memory_visibility         hot/warm/cold/archive（importanceと独立）
  *   - memory_summaries          short/detailed要約（派生データ・source_hash管理）
  *   - memory_usage              access_count / last_accessed_at / last_session_id
@@ -110,7 +110,7 @@ function fingerprint(db) {
   };
 }
 
-const RECALL_TABLES = [
+const Recall_TABLES = [
   "memory_visibility",
   "memory_summaries",
   "memory_usage",
@@ -134,12 +134,12 @@ function migrateOne(wsName, dbPath) {
 
     const existingTables = db
       .prepare(
-        `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${RECALL_TABLES.map(() => "?").join(",")})`,
+        `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${Recall_TABLES.map(() => "?").join(",")})`,
       )
-      .all(...RECALL_TABLES).length;
-    const hasRecallSchema = existingTables === RECALL_TABLES.length;
+      .all(...Recall_TABLES).length;
+    const hasRecall = existingTables === Recall_TABLES.length;
 
-    if (!hasRecallSchema) {
+    if (!hasRecall) {
       // 移行前バックアップ（空でないDBのみ・既存なら上書きしない）
       if (before.count > 0) {
         const backupDir = join(ROOT, "backups", "pre-migration-recall");

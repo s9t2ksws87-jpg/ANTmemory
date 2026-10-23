@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 4クライアント同時試験（隔離ストア）
+ * Phase 8: 4クライアント同時試験（隔離ストア）
  *
  * - claude-code / codex / antigravity / hermes が同時に書込・supersede・
  *   重要度変更を行っても ID 衝突・欠損・DB破損が0であること
@@ -14,6 +14,7 @@
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import fs from "node:fs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = join(ROOT, "bin");
@@ -33,7 +34,9 @@ const check = (name, ok, detail = "") => {
 const text = (r) => (r.content ?? []).map((c) => c.text).join("\n");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const WS = `concurrent-writes-test-${process.pid}`;
+const WS = "phase8-concurrent-test";
+const dbPath = join(ROOT, "stores", WS, "store.db");
+for (const p of [dbPath, dbPath + "-wal", dbPath + "-shm"]) try { fs.rmSync(p, { force: true }); } catch {}
 
 async function openAs(clientName, extraEnv = {}) {
   const { Client } = await import(
@@ -42,7 +45,7 @@ async function openAs(clientName, extraEnv = {}) {
   const { StdioClientTransport } = await import(
     pathToFileURL(join(ROOT, "server", "node_modules", "@modelcontextprotocol", "sdk", "dist", "esm", "client", "stdio.js")).href
   );
-  const client = new Client({ name: `concurrent-${clientName}`, version: "1.0.0" });
+  const client = new Client({ name: `phase8-${clientName}`, version: "1.0.0" });
   await client.connect(new StdioClientTransport({
     command: process.execPath, args: [join(BIN, "ant-memory.mjs")], cwd: ROOT,
     env: { ...process.env, ANT_MEMORY_ROOT: ROOT, ANT_MEMORY_WORKSPACE: WS, ANT_MEMORY_CLIENT: clientName, ...extraEnv },
@@ -73,9 +76,9 @@ try {
           const r = await client.callTool({
             name: "write_context",
             arguments: {
-              topic: `concurrent: ${actor} の記録 ${String(i).padStart(3, "0")}`,
+              topic: `phase8: ${actor} の記録 ${String(i).padStart(3, "0")}`,
               content: `同時試験 ${key} index=${i}。整合性とID衝突の検証用本文。`,
-              tags: ["concurrent"],
+              tags: ["phase8"],
               importance: i % 4 === 0 ? "high" : "low",
             },
           });
@@ -103,10 +106,10 @@ try {
       name: "supersede_context",
       arguments: {
         old_id: hermesAIds[0],
-        topic: `concurrent: hermes の改訂版`,
+        topic: `phase8: hermes の改訂版`,
         content: "モデルBからモデルAの記録を置換。actor連続性の検証。",
-        reason: "concurrent write置換試験",
-        tags: ["concurrent"],
+        reason: "phase8 置換試験",
+        tags: ["phase8"],
       },
     });
     succId = text(s).match(/新記録 id=`([0-9a-f]{10})`/i)?.[1];
@@ -120,7 +123,7 @@ try {
     const impJobs = [...clients.values()].map((c, idx) =>
       c.callTool({
         name: "change_importance",
-        arguments: { id: target, importance: idx % 2 === 0 ? "medium" : "low", reason: `concurrent write同時変更 idx=${idx}` },
+        arguments: { id: target, importance: idx % 2 === 0 ? "medium" : "low", reason: `phase8 同時変更 idx=${idx}` },
       }).then(() => ({ ok: true })).catch((e) => ({ ok: false, e: String(e).slice(0, 80) })),
     );
     const impResults = await Promise.all(impJobs);
@@ -149,7 +152,7 @@ try {
     const fk = db.prepare("PRAGMA foreign_key_check").all().length;
     check("外部キー違反ゼロ", fk === 0, `violations=${fk}`);
 
-    const stored = db.prepare("SELECT COUNT(*) AS c FROM chunks WHERE tags LIKE '%concurrent%'").get().c;
+    const stored = db.prepare("SELECT COUNT(*) AS c FROM chunks WHERE tags LIKE '%phase8%'").get().c;
     const expectedWrites = (agents.length + 2) * WRITES + 1; // +supersede新規1件
     check("期待件数が格納されている", stored === expectedWrites, `stored=${stored} expected=${expectedWrites}`);
 
@@ -157,8 +160,8 @@ try {
     check("ID衝突なし（報告ID数==格納数）", allIds.length === expectedWrites && new Set(allIds).size === expectedWrites,
       `reported=${allIds.length} distinct=${new Set(allIds).size}`);
 
-    // イベント二重登録チェック: created イベントはchunkごとに高々1回（監査ツール経由のみ）。
-    // 注意: 上流write_chunkはイベントを書かないため、createdイベントは監査操作由来のみ。
+    // イベント二重登録チェック: created イベントはchunkごとに高々1回（auditツール経由のみ）。
+    // 注意: 上流write_chunkはイベントを書かないため、createdイベントはaudit操作由来のみ。
     const dupEvents = db.prepare(
       `SELECT chunk_id, event_type, COUNT(*) AS c FROM memory_events
        WHERE event_type IN ('superseded','retracted','restored')

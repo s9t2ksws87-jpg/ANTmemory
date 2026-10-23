@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Visibility導入の試験（隔離ストア）
+ * Phase Recall-1: Visibility導入の試験（隔離ストア）
  *
  * - promote_memory で visibility 変更（hot/warm/cold/archive）
  * - importance と独立（critical + cold が成立する）
@@ -15,11 +15,14 @@ import { join, resolve, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import fs from "node:fs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = join(ROOT, "bin");
 
-const WS = "visibility-test";
+const WS = "recall-visibility-test";
+const dbPath = join(ROOT, "stores", WS, "store.db");
+for (const p of [dbPath, dbPath + "-wal", dbPath + "-shm"]) try { fs.rmSync(p, { force: true }); } catch {}
 let passed = 0, failed = 0;
 const check = (name, ok, detail = "") => {
   if (ok) { passed++; console.log(`PASS ${name}`); }
@@ -34,13 +37,13 @@ const { StdioClientTransport } = await import(
   pathToFileURL(join(ROOT, "server", "node_modules", "@modelcontextprotocol", "sdk", "dist", "esm", "client", "stdio.js")).href
 );
 
-const client = new Client({ name: "visibility", version: "1.0.0" });
+const client = new Client({ name: "recallvis", version: "1.0.0" });
 
 await client.connect(new StdioClientTransport({
   command: process.execPath,
   args: [join(BIN, "ant-memory.mjs")],
   cwd: ROOT,
-  env: { ...process.env, ANT_MEMORY_ROOT: ROOT, ANT_MEMORY_WORKSPACE: WS, ANT_MEMORY_CLIENT: "hermes" },
+  env: { ...process.env, ANT_MEMORY_ROOT: ROOT, ANT_MEMORY_WORKSPACE: WS, ANT_MEMORY_CLIENT: "hermes", ANT_MEMORY_ADVANCED_TOOLS: "1" },
 }));
 
 try {
@@ -48,9 +51,9 @@ try {
   const w1 = await client.callTool({
     name: "write_context",
     arguments: {
-      topic: "visibility: 絶対変更禁止ルール",
+      topic: "recallvis: 絶対変更禁止ルール",
       content: "作品世界の物理法則はいかなる場合も変更禁止。この原則は滅多に参照しないが重要。",
-      tags: ["visibility"], importance: "critical",
+      tags: ["recallvis"], importance: "critical",
     },
   });
   const idCritical = text(w1).match(/id=`([0-9a-f]{10})`/i)[1];
@@ -64,9 +67,9 @@ try {
   const w2 = await client.callTool({
     name: "write_context",
     arguments: {
-      topic: "visibility: よく使う作業メモ",
+      topic: "recallvis: よく使う作業メモ",
       content: "頻繁に参照する現在の作業状態。ミュウの試験語を含む。",
-      tags: ["visibility"], importance: "low",
+      tags: ["recallvis"], importance: "low",
     },
   });
   const idFrequent = text(w2).match(/id=`([0-9a-f]{10})`/i)?.[1];

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Summary Layerの試験（隔離ストア）
+ * Phase Recall-3: Summary Layer の試験（隔離ストア）
  *
  * - short/detailed summary が生成される
  * - raw content は一切変更されない（ハッシュ照合）
@@ -19,7 +19,7 @@ import { DatabaseSync } from "node:sqlite";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = join(ROOT, "bin");
 
-const WS = "summary-test";
+const WS = "recall-summary-test";
 let passed = 0, failed = 0;
 const check = (name, ok, detail = "") => {
   if (ok) { passed++; console.log(`PASS ${name}`); }
@@ -35,12 +35,12 @@ const { StdioClientTransport } = await import(
   pathToFileURL(join(ROOT, "server", "node_modules", "@modelcontextprotocol", "sdk", "dist", "esm", "client", "stdio.js")).href
 );
 
-const client = new Client({ name: "summary", version: "1.0.0" });
+const client = new Client({ name: "recallsum", version: "1.0.0" });
 await client.connect(new StdioClientTransport({
   command: process.execPath,
   args: [join(BIN, "ant-memory.mjs")],
   cwd: ROOT,
-  env: { ...process.env, ANT_MEMORY_ROOT: ROOT, ANT_MEMORY_WORKSPACE: WS, ANT_MEMORY_CLIENT: "hermes" },
+  env: { ...process.env, ANT_MEMORY_ROOT: ROOT, ANT_MEMORY_WORKSPACE: WS, ANT_MEMORY_CLIENT: "hermes", ANT_MEMORY_ADVANCED_TOOLS: "1" },
 }));
 
 try {
@@ -55,7 +55,7 @@ try {
   ].join("");
   const w = await client.callTool({
     name: "write_context",
-    arguments: { topic: "summary: 魔法体系の方針", content: longContent, tags: ["summary"], importance: "high" },
+    arguments: { topic: "recallsum: 魔法体系の方針", content: longContent, tags: ["recallsum"], importance: "high" },
   });
   const id = text(w).match(/id=`([0-9a-f]{10})`/i)[1];
 

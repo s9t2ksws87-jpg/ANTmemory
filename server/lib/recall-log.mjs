@@ -1,7 +1,7 @@
 /**
- * ANTmemory Recall Log（ANTmemory 所有コード）
+ * ANTmemory recall Recall Log（ANTmemory 所有コード）
  *
- * 「なぜ思い出したか」を記録する。保存・変更の監査履歴が「なぜ保存・変更したか」を
+ * 「なぜ思い出したか」を記録する。auditの監査履歴が「なぜ保存・変更したか」を
  * 追えるのに対し、こちらはAIの想起根拠を人間が追えるようにする。
  */
 
@@ -14,8 +14,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 let _db = null;
 async function ensureDb() {
   if (!_db) {
-    const loaded = await import(pathToFileURL(path.join(HERE, "upstream.mjs")).href);
-    const u = await loaded.loadUpstream();
+    const loaded = await import(pathToFileURL(path.join(HERE, "core.mjs")).href);
+    const u = await loaded.loadCore();
     _db = u.db.getDb();
   }
   return _db;
@@ -48,7 +48,7 @@ export async function logRecall(entries, { sessionId = null, query = null } = {}
       throw e;
     }
   } catch (err) {
-    process.stderr.write(`[recall-log] logRecall failed: ${err.message}\n`);
+    process.stderr.write(`[recall-recall] logRecall failed: ${err.message}\n`);
   }
 }
 
@@ -57,7 +57,7 @@ export async function getRecallLog(chunkId, limit = 20) {
   const db = await ensureDb();
   return db
     .prepare(
-      `SELECT reason, score, rank, created_at FROM memory_recall_log
+      `SELECT query, reason, score, rank, session_id, created_at FROM memory_recall_log
        WHERE chunk_id = ? ORDER BY created_at DESC LIMIT ?`,
     )
     .all(chunkId, limit);

@@ -372,7 +372,13 @@ function renderMemories() {
     const impBadge = document.createElement("span");
     impBadge.className = `importance-badge ${impClass}`;
     impBadge.textContent = mem.importance;
-    badgeGroup.append(agentBadge, impBadge);
+    const statusBadge = document.createElement("span");
+    statusBadge.className = `status-badge status-${mem.status || "active"}`;
+    statusBadge.textContent = mem.current ? `CURRENT · ${mem.status || "active"}` : (mem.status || "active");
+    const visBadge = document.createElement("span");
+    visBadge.className = `vis-badge vis-${mem.visibility || "warm"}`;
+    visBadge.textContent = mem.visibility || "warm";
+    badgeGroup.append(agentBadge, impBadge, statusBadge, visBadge);
     const dateEl = document.createElement("span");
     dateEl.className = "card-date";
     dateEl.textContent = dateStr;
@@ -597,7 +603,7 @@ async function loadHistory(id) {
       return;
     }
 
-    // 想起理由ログ（recall log）
+    // 想起理由ログ（recall）
     if (data.recalls && data.recalls.length) {
       const recallTitle = document.createElement("h4");
       recallTitle.textContent = "🧠 なぜ思い出したか (Recall reasons)";

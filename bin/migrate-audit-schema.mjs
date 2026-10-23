@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 監査スキーマ migration（ANTmemory 固有機能・所有コード）
+ * Phase 2: 監査スキーマ migration（ANTmemory 固有機能・所有コード）
  *
  * 既存 chunks を一切変更せず、監査履歴の器を追加する:
  *   - memory_events    記憶に対する変更の追記型ログ
@@ -98,12 +98,12 @@ function migrateOne(wsName, dbPath) {
     db.exec("PRAGMA busy_timeout = 5000");
     const before = fingerprint(db);
 
-    // 既に監査スキーマがあるか
-    const hasAuditSchema = db
+    // 既にauditスキーマがあるか
+    const hasAudit = db
       .prepare("SELECT COUNT(*) AS c FROM sqlite_master WHERE type='table' AND name IN ('memory_events','memory_relations','memory_lifecycle')")
       .get().c === 3;
 
-    if (!CHECK_ONLY && !hasAuditSchema) {
+    if (!CHECK_ONLY && !hasAudit) {
       // 移行前バックアップ（空でないDBのみ・既存なら上書きしない）
       if (before.count > 0) {
         const backupDir = join(ROOT, "backups", "pre-migration-audit");

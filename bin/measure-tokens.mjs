@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * トークン基準値計測
+ * Phase Recall-0: トークン基準値計測
  *
  * 固定コーパス（日本語・英語・長文を含む）を隔離ストアへ投入し、代表クエリ群で
- * search_context の返却量を固定コーパス・クエリで継続比較するための
- * 基準値を作る。検索方式の変更後もこのスクリプトで再計測し差分を記録する。
+ * search_context の返却量を計測する。audit/recall を同じコーパス・クエリで比較するための
+ * 基準値を作る。recallの各フェーズ完了時にもこのスクリプトで再計測し差分を記録する。
  *
- * 計測原則:
- *   機能追加より「本当にtoken削減できたか」の計測を優先する。
+ * 原則（docs/ARCHITECTURE_RESEARCH.md 冒頭）:
+ *   機能追加より「本当にtoken削減できたか」の計測が最優先。
  *
  * 使い方:
  *   node bin/measure-tokens.mjs                 # 計測実行 → backups/ へ記録
@@ -61,7 +61,7 @@ function estimateTokens(text) {
 }
 
 // ─── 隔離ストア準備 ──────────────────────────────────────────────────────────
-const WS = "token-measure";
+const WS = "recall-token-measure";
 
 const { Client } = await import(
   pathToFileURL(join(ROOT, "server", "node_modules", "@modelcontextprotocol", "sdk", "dist", "esm", "client", "index.js")).href
@@ -71,7 +71,7 @@ const { StdioClientTransport } = await import(
 );
 
 async function open() {
-  const client = new Client({ name: "token-measure", version: "1.0.0" });
+  const client = new Client({ name: "recall-measure", version: "1.0.0" });
   await client.connect(new StdioClientTransport({
     command: process.execPath,
     args: [join(BIN, "ant-memory.mjs")],
@@ -137,23 +137,23 @@ const totalChars = measurements.reduce((s, m) => s + m.chars, 0);
 const totalTokens = measurements.reduce((s, m) => s + m.estTokens, 0);
 const summary = {
   measuredAt: new Date().toISOString(),
-  profile: "selective-recall",
+  version: "audit",
   workspace: WS,
   corpusSize: CORPUS.length,
   queryCount: QUERIES.length,
   perQuery: measurements,
   avgCharsPerQuery: Math.round(totalChars / measurements.length),
   avgEstTokensPerQuery: Math.round(totalTokens / measurements.length),
-  note: "token値は簡易推定(CJK=1token, 他=4chars/token)。継続比較は同一推定方式で行う。",
+  note: "token値は簡易推定(CJK=1token, 他=4chars/token)。audit/recall比較は同一推定方式なので有効。",
 };
 
 // ── 出力・保存 ───────────────────────────────────────────────────────────────
 mkdirSync(join(ROOT, "backups"), { recursive: true });
-const outPath = join(ROOT, "backups", `token-measure-${summary.measuredAt.replace(/[:.]/g, "-").slice(0, 19)}.json`);
+const outPath = join(ROOT, "backups", `recall-token-${summary.measuredAt.replace(/[:.]/g, "-").slice(0, 19)}.json`);
 writeFileSync(outPath, JSON.stringify(summary, null, 2) + "\n", "utf8");
-writeFileSync(join(ROOT, "backups", "TOKEN_MEASURE_LATEST.txt"), `${outPath}\n`, "utf8");
+writeFileSync(join(ROOT, "backups", "Recall_TOKEN_LATEST.txt"), `${outPath}\n`, "utf8");
 
-console.log("\n=== 選択的想起の計測結果 ===");
+console.log("\n=== 計測結果 (audit基準値) ===");
 for (const m of measurements) {
   console.log(`  ${m.mode.padEnd(8)} "${m.query}" → ${m.resultCount}件 ${String(m.chars).padStart(5)}字 ≈${m.estTokens}tok`);
 }
@@ -166,7 +166,7 @@ if (COMPARE_WITH && existsSync(COMPARE_WITH)) {
   const delta = summary.avgEstTokensPerQuery - base.avgEstTokensPerQuery;
   const pct = ((delta / base.avgEstTokensPerQuery) * 100).toFixed(1);
   console.log(`\n=== 比較 ===`);
-  console.log(`基準: ${base.avgEstTokensPerQuery} tok (${base.measuredAt}, ${base.profile ?? base.version ?? "legacy-baseline"})`);
+  console.log(`基準: ${base.avgEstTokensPerQuery} tok (${base.measuredAt}, ${base.version})`);
   console.log(`現在: ${summary.avgEstTokensPerQuery} tok`);
   console.log(`差分: ${delta > 0 ? "+" : ""}${delta} tok (${pct}%)`);
   console.log(pct <= -60 ? "✓ KPI達成（60%以上削減）" : "✗ KPI未達（60%削減が必要）");

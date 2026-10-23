@@ -1,5 +1,5 @@
 /**
- * ANTmemory Usage / Retrieval Session（ANTmemory 所有コード）
+ * ANTmemory recall Usage / Retrieval Session（ANTmemory 所有コード）
  *
  * - 参照統計（access_count / last_accessed_at / last_session_id）を記録する
  * - セッション内既読記憶は検索順位を下げる（重複投入の削減）
@@ -15,8 +15,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 let _db = null;
 async function ensureDb() {
   if (!_db) {
-    const loaded = await import(pathToFileURL(path.join(HERE, "upstream.mjs")).href);
-    const u = await loaded.loadUpstream();
+    const loaded = await import(pathToFileURL(path.join(HERE, "core.mjs")).href);
+    const u = await loaded.loadCore();
     _db = u.db.getDb();
   }
   return _db;
@@ -46,7 +46,7 @@ export async function recordAccess(chunkIds, sessionId = null) {
       throw e;
     }
   } catch (e) {
-    process.stderr.write(`[usage-session] recordAccess failed: ${e.message}\n`);
+    process.stderr.write(`[recall-usage] recordAccess failed: ${e.message}\n`);
   }
 }
 
