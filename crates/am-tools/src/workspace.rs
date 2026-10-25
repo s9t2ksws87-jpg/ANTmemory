@@ -397,7 +397,9 @@ mod tests {
         std::fs::write(scratch.join(WORKSPACE_LINK), "../actual-project\n").unwrap();
         let bound = resolve(&layout, &child, &|_| None).unwrap();
         assert_eq!(bound.slug, "actual-project");
-        assert!(same_root(bound.root.as_ref().unwrap(), &target));
+        // Windows CI may expose TEMP through an 8.3 alias; bindings return its canonical path.
+        let canonical_target = plain_canonical_path(&std::fs::canonicalize(&target).unwrap());
+        assert!(same_root(bound.root.as_ref().unwrap(), &canonical_target));
         let explicit = resolve(&layout, &child, &|k| (k == "ANT_MEMORY_WORKSPACE").then(|| "chosen".into())).unwrap();
         assert_eq!(explicit.slug, "chosen");
         let own_repo = child.join("independent");
