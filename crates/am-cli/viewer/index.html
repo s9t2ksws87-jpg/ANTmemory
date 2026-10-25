@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>ANTmemory — Memory Explorer</title>
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header class="titlebar">
+      <div class="brand">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 18 12 4l8 14M7 13h10M4 18h16" />
+          <circle cx="12" cy="4" r="2" />
+          <circle cx="4" cy="18" r="2" />
+          <circle cx="20" cy="18" r="2" /></svg
+        ><strong>ANTmemory</strong><span class="title-separator">/</span
+        ><span>Memory Explorer</span>
+      </div>
+      <div class="title-center" id="windowTitle">記憶のワークスペース</div>
+      <span class="read-only">◉ 読み取り専用</span>
+    </header>
+    <div class="layout">
+      <nav class="activitybar" aria-label="表示の切り替え">
+        <button
+          class="activity active"
+          data-view="memories"
+          title="記憶"
+          aria-label="記憶"
+        >
+          <svg viewBox="0 0 24 24">
+            <path d="M7 3h10v4h4v14H7zM3 17V3h10M17 3v4h4M10 11h8M10 15h8" />
+          </svg>
+        </button>
+        <button
+          class="activity"
+          data-view="goals"
+          title="目標と作業"
+          aria-label="目標と作業"
+        >
+          <svg viewBox="0 0 24 24">
+            <circle cx="6" cy="5" r="2" />
+            <circle cx="6" cy="19" r="2" />
+            <circle cx="18" cy="12" r="2" />
+            <path d="M6 7v10M6 12h10" />
+          </svg>
+        </button>
+        <button
+          class="activity"
+          data-view="unknowns"
+          title="未解決の疑問"
+          aria-label="未解決の疑問"
+        >
+          <svg viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M9 8a3 3 0 0 1 6 1c0 2-3 2-3 4M12 16v1" />
+          </svg>
+        </button>
+        <button
+          class="activity"
+          data-view="states"
+          title="共有された現在地"
+          aria-label="共有された現在地"
+        >
+          <svg viewBox="0 0 24 24">
+            <path d="M4 5h16M4 12h16M4 19h16" />
+            <circle cx="8" cy="5" r="2" />
+            <circle cx="16" cy="12" r="2" />
+            <circle cx="10" cy="19" r="2" />
+          </svg>
+        </button>
+        <span class="activity-spacer"></span
+        ><button
+          class="activity"
+          id="refresh"
+          title="最新の内容に更新"
+          aria-label="更新"
+        >
+          <svg viewBox="0 0 24 24">
+            <path d="M20 10a8 8 0 1 0-1 7M20 4v6h-6" />
+          </svg>
+        </button>
+      </nav>
+      <aside class="explorer">
+        <div class="panel-heading">エクスプローラー <span>•••</span></div>
+        <div class="explorer-section">⌄ 作業空間</div>
+        <div class="workspace-search">
+          <input
+            id="workspaceSearch"
+            type="search"
+            placeholder="作業空間を絞り込む"
+            aria-label="作業空間を絞り込む"
+          />
+          <label class="empty-workspaces-toggle"
+            ><input id="showEmptyWorkspaces" type="checkbox" />
+            空の作業空間も表示</label
+          >
+        </div>
+        <div id="workspaces" class="workspace-list" role="list"></div>
+        <div class="explorer-section overview-heading">⌄ この作業空間</div>
+        <div id="overview" class="overview">
+          <p class="muted">作業空間を選択してください</p>
+        </div>
+        <div class="explorer-bottom">
+          <span class="live-dot"></span> ローカルの V4 データベース<br /><small
+            >閲覧内容は記憶の学習に含まれません</small
+          >
+        </div>
+      </aside>
+      <main class="workbench">
+        <nav class="editor-tabs" aria-label="内容">
+          <button class="editor-tab active" data-view="memories">
+            <span class="tab-icon">▤</span> 記憶</button
+          ><button class="editor-tab" data-view="goals">
+            <span class="tab-icon green">⑂</span> 目標と作業</button
+          ><button class="editor-tab" data-view="unknowns">
+            <span class="tab-icon amber">?</span> 未解決</button
+          ><button class="editor-tab" data-view="states">
+            <span class="tab-icon purple">{ }</span> 現在地
+          </button>
+        </nav>
+        <div class="breadcrumbs">
+          <span id="workspaceName">作業空間</span><span>›</span
+          ><span id="viewName">記憶</span><span id="selectionCrumb"></span>
+        </div>
+        <section class="workspace-header">
+          <div>
+            <div class="eyebrow" id="workspacePath">WORKSPACE</div>
+            <h1 id="heading">記憶を探す</h1>
+            <p id="subtitle">残された判断と、その経緯をたどる。</p>
+          </div>
+          <button
+            class="quiet-button"
+            id="exportList"
+            title="表示中の一覧をJSONで保存"
+          >
+            ↓ 一覧を保存
+          </button>
+        </section>
+        <form class="toolbar" id="searchForm">
+          <div class="search-field">
+            <svg viewBox="0 0 24 24">
+              <circle cx="10" cy="10" r="6" />
+              <path d="m15 15 5 5" /></svg
+            ><input
+              id="query"
+              type="search"
+              placeholder="本文・タイトル・タグ・IDから探す"
+              aria-label="記憶を検索"
+            /><kbd>Ctrl K</kbd>
+          </div>
+          <button class="primary-button" type="submit">検索</button
+          ><button
+            class="quiet-button"
+            type="button"
+            id="filterToggle"
+            aria-expanded="false"
+          >
+            絞り込み <span id="filterCount"></span>
+          </button>
+        </form>
+        <div class="filters" id="filters" hidden>
+          <label
+            >記録したエージェント<select id="agent">
+              <option value="">すべて</option>
+            </select></label
+          >
+          <label
+            >状態<select id="status">
+              <option value="active">有効な記憶</option>
+              <option value="all">履歴もすべて</option>
+              <option value="superseded">置き換え前</option>
+              <option value="retracted">撤回済み</option>
+              <option value="expired">期限切れ</option>
+            </select></label
+          >
+          <label
+            >表示範囲<select id="visibility">
+              <option value="">すべて</option>
+              <option value="hot">hot</option>
+              <option value="warm">warm</option>
+              <option value="cold">cold</option>
+              <option value="archive">archive</option>
+            </select></label
+          >
+          <label
+            >重要度<select id="importance">
+              <option value="">すべて</option>
+              <option value="critical">最重要</option>
+              <option value="high">高</option>
+              <option value="medium">通常</option>
+              <option value="low">参考</option>
+            </select></label
+          >
+          <label
+            >タグ<select id="tag">
+              <option value="">すべて</option>
+            </select></label
+          >
+          <button class="text-button" id="resetFilters" type="button">
+            解除
+          </button>
+        </div>
+        <div class="split-view">
+          <section class="results-pane" aria-label="検索結果">
+            <div class="results-heading">
+              <span id="resultCount">読み込み中…</span
+              ><select id="sort" aria-label="並び順">
+                <option value="updated">更新が新しい順</option>
+                <option value="created">記録が新しい順</option>
+                <option value="oldest">記録が古い順</option></select
+              ><label id="closedToggle" hidden
+                ><input id="showClosed" type="checkbox" /> 完了も表示</label
+              >
+            </div>
+            <div id="results" class="results" tabindex="0"></div>
+            <div class="pagination" id="pagination">
+              <button
+                id="previous"
+                class="quiet-button"
+                aria-label="前のページ"
+              >
+                ‹</button
+              ><span id="pageInfo"></span
+              ><button id="next" class="quiet-button" aria-label="次のページ">
+                ›
+              </button>
+            </div>
+          </section>
+          <section
+            id="detail"
+            class="detail-pane"
+            aria-label="記録の詳細"
+            aria-live="polite"
+          >
+            <div class="empty-detail">
+              <div class="empty-symbol">▤</div>
+              <h2>記憶の続きは、ここに。</h2>
+              <p>
+                一覧から記録を選ぶと、本文と根拠、<br />これまでの変更を確認できます。
+              </p>
+              <div class="shortcuts">
+                <kbd>Ctrl K</kbd> 検索へ移動 <span>·</span>
+                <kbd>↑ ↓</kbd> 一覧を移動
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+    <footer class="statusbar">
+      <span>◈ ANTmemory</span><span id="statusWorkspace">作業空間を選択</span
+      ><span class="status-spacer"></span
+      ><span id="statusMessage">読み取り専用</span><span>UTF-8</span
+      ><span>V4</span>
+    </footer>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </body>
+</html>

@@ -1,33 +1,40 @@
-# Upgrading from 1.0.0 to 2.0.0
+# Upgrade public 2.x to ANTmemory 4
 
-This is a major release because the default MCP tool surface and some inputs changed. The existing SQLite store layout remains usable; replacing the runtime does not mean exporting or recreating memories.
+V4 changes the runtime/storage layout. Keep an offline backup of the whole stores/ directory and runtime/workspaces.json, plus the old release. Never run both generations against one installation.
 
-1. Stop all MCP processes writing to this ANTmemory installation, and close the Viewer.
-2. Back up the entire `stores/` directory while writers are stopped. Keep `runtime/workspaces.json` so existing absolute-path-to-store mappings are retained. Keep your MCP client configuration separately.
-3. Update the source checkout to the release, then run `npm ci` inside `server/`. Node.js 24 or newer is required. The old upstream dependency and patcher are removed.
-4. Keep the existing stores in place. Schema setup runs on startup. Do not copy development/private stores into a public repository or replace stores with test fixtures.
-5. Run `node bin/ant-memory.mjs --where` with the same cwd and environment as your client. Check the resolved store before restarting every MCP connection.
-6. Inspect known records with `read_context` and `get_context_history`, and inspect current state with `get_state` / `list_state`. Search normally, then explicitly include history/hidden records when checking older material.
+The CLI calls the older store.db format **v3** internally; its importer also handles public 2.x native databases. The public-2.x fixture verifies Raw, withdrawal, state and unmapped rows; it is not proof that every user's database is already migrated. Old source remains at tag v2.0.0 and legacy/v2/.
 
-To roll back after a schema-changing upgrade, stop all writers and restore the matching source/dependencies and backed-up stores together. Do not assume that an older server understands every field written by a newer release.
+## Windows procedure
 
-## Client instruction changes
+1. Stop MCP clients using the old installation. Back up stores/ and the workspace registry. An offline folder copy or SQLite backup API retains WAL data; copying only a live main DB file may not.
+2. Extract the complete V4 ZIP into a new folder. Copy the backed-up stores/ and registry into that folder, retaining the original backup. Use another copy for rehearsal when possible.
+3. Open PowerShell in the new installation and rehearse a store conversion:
 
-| Old behavior/instruction | 2.0.0 |
-|---|---|
-| Supply `agent` when writing | Connection identity comes from `ANT_MEMORY_CLIENT`; no write-time `agent`/`actor` input |
-| `max_results` | Use `top_k` for search count |
-| `search_state` | `list_state(query=...)` |
-| `compare_and_set_state` | `set_state(expected_value=...)` |
-| `recall_deep` in routine work | `search_context(include_history/include_hidden/full_content)` or `read_context` |
-| Re-send all metadata for a small correction | `correct_context` inherits omitted metadata |
-| Summaries/recall sessions exposed by default | Maintenance tools require `ANT_MEMORY_ADVANCED_TOOLS=1` |
-| `delete_context` | Not exposed, including advanced mode |
+```powershell
+$env:ANT_MEMORY_ROOT = (Get-Location).Path
+./runtime/bin/antmemory.exe migrate --rehearse --from ./stores/my-project/store.db --out-dir ./runtime/rehearsal-my-project --registry ./runtime/workspaces.json
+```
 
-`source_ref` is optional and exposed by normal write/read/search/list operations. Earlier records without a source remain readable. A source-only `correct_context` can add a handle while retaining the older revision.
+Replace my-project with the actual old store name. If no registry exists, use --workspace-root C:/projects/my-project instead. Inspect the migration report and equality results. Rehearsal snapshots into a separate v4.db and retains unmapped tables; it does not replace the source DB.
 
-`goal.current` is an ordinary shared-state convention. It does not trigger automatic retrieval or enforcement. Experimental efficiency protocols from the development workspace are not part of this release.
+4. Freeze old-format writers, convert and verify:
 
-## Verified scope
+```powershell
+./runtime/bin/antmemory.exe cutover freeze --all
+./runtime/bin/antmemory.exe migrate --final --all
+./runtime/bin/antmemory.exe doctor --all
+```
 
-Release validation includes opening a fixture created through the actual 1.0.0 MCP server, checking both replacement revisions, their status/current flags, shared state, original chunk metadata, audit events, and SQLite integrity through the new runtime. This is a bounded compatibility test, not proof for every possible external database modification. See [RELEASE_VALIDATION.md](RELEASE_VALIDATION.md).
+Freeze will not call a running writer stopped. Close listed clients and retry; --confirm-stop explicitly authorizes stopping matching processes. Enumeration failures are not zero writers. A failed conversion leaves a failed candidate/report instead of declaring success.
+
+5. Configure the new executable with args ["serve"], or the new Node bridge, and restart MCP connections. Check the route and representative Raw, history, state and UNKNOWNs.
+
+Old stores/snapshots remain. Already-running old launchers do not gain new freeze rules merely because their files were replaced; keep old clients stopped. Never upload store files or private configuration to the public repository.
+
+## Rollback
+
+Stop V4 before using the old release. If no new V4 data needs retaining, restore the offline pre-upgrade backup. Otherwise use export-v3 --store my-project --out C:/recovery/store.db against the final migration snapshot, inspect its verification, and keep the V4 data/reports. Supplemental export tables retain V4-only data; goal cards and connection observations do not acquire identical 2.x behavior.
+
+## 日本語の要点
+
+旧クライアント停止→フォルダ全体のバックアップ→新しい配置へコピー→予行照合→凍結と最終変換→点検→MCP再接続の順です。CLI内の「v3」は公開2.xのnative DBも含む旧形式の呼称です。store.dbを消して置換する手順ではありません。停止未確認や照合失敗のまま進めず、切戻しでも両世代を同時起動しません。

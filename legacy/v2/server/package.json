@@ -1,0 +1,29 @@
+{
+  "name": "ant-memory-server",
+  "version": "2.0.0",
+  "private": true,
+  "description": "ANTmemory native MCP server with physically isolated workspace databases",
+  "scripts": {
+    "test": "node ../bin/test-baseline.mjs",
+    "test:concurrency": "node ../bin/test-concurrent-writes.mjs",
+    "test:all": "node ../bin/run-tests.mjs"
+  },
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "@huggingface/transformers": "3.8.1",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "gray-matter": "4.0.3",
+    "zod": "^4.4.3"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "overrides": {
+    "sharp": "0.35.5"
+  },
+  "allowScripts": {
+    "onnxruntime-node@1.21.0": true,
+    "protobufjs@7.6.5": true
+  }
+}

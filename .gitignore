@@ -1,6 +1,10 @@
 # Dependencies and downloaded models
 **/node_modules/
 **/.cache/
+target/
+dist/
+models/
+.antmemory-workspace
 
 # Runtime state, databases, and generated test artifacts
 *.db

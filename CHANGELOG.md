@@ -1,5 +1,17 @@
 # Changelog
 
+## 4.0.0 — 2026-10-25
+
+- Native Rust daemon/shim replaces the JavaScript server; public-2.x source is retained under legacy/v2 and old Node entry points bridge to V4.
+- 19 normal tools, content-only saves with automatic Git provenance, source re-observation, UNKNOWNs and lightweight work/overall cards.
+- Four default excerpts/~1,000-token search responses, partial Raw reads, bounded lists with totals/continuation, and safe C2 response reuse.
+- Pinned local Ruri INT8 model and ONNX Runtime CPU distribution; file-fingerprinted model identity and background vectors.
+- Correction/withdrawal/restore and explicit older-format migration retain Raw/history. Later rejection also affects search-derived recall words and past-read suggestions.
+- Workspace links and fallback disclosure, old-shim rebinding, UNC paths and link-removal routing recovery. Viewing another card does not select its work.
+- IDE-style native read-only Viewer and automatic maintenance/backups.
+- Windows x64 offline binary ZIP, dependency notices and checksums. Existing 2.x stores require explicit migration; v1/v2 tags remain available.
+
+
 ## 2.0.0 — 2026-10-23
 
 - Own the native MCP server, SQLite storage, migration, embedding, and retrieval core; remove the runtime dependency on `agent-memory-store` and the install-time patcher.

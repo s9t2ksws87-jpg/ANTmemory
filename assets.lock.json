@@ -1,0 +1,33 @@
+{
+  "version": "4.0.0",
+  "onnxruntime_archive": {
+    "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.31.0/onnxruntime-win-x64-1.31.0.zip",
+    "sha256": "3958d8a44984160692c1b4ffd0de3cb48f8c39f9d34bb31e433db06e30b82195"
+  },
+  "assets": [
+    {
+      "path": "models/ruri-v3-70m/onnx/model.onnx",
+      "url": "https://huggingface.co/mochiya98/ruri-v3-70m-onnx/resolve/b026e28b1cac69eddb2f59f0393bac994c442750/onnx/model_int8.onnx",
+      "sha256": "c0d9885f7cdd014518b25404b75b67b2072d93c49d0cc5509263b5e8a1994dfa",
+      "bytes": 70684662
+    },
+    {
+      "path": "models/ruri-v3-70m/tokenizer.json",
+      "url": "https://huggingface.co/cl-nagoya/ruri-v3-70m/resolve/07a8b0aba47d29d2ca21f89b915c1efe2c23d1cc/tokenizer.json",
+      "sha256": "0a94ac9a0a02c067bdef25b72ae9f4ee33f48f552e55988d444f6d25eeb1d062",
+      "bytes": 6724873
+    },
+    {
+      "path": "runtime/bin/onnxruntime.dll",
+      "archive_path": "onnxruntime-win-x64-1.31.0/lib/onnxruntime.dll",
+      "sha256": "0c42dc4e278f0968fdf9ebf1b1e54a74c657a9942e70803e453c91993451cf4c",
+      "bytes": 17253176
+    },
+    {
+      "path": "runtime/bin/onnxruntime_providers_shared.dll",
+      "archive_path": "onnxruntime-win-x64-1.31.0/lib/onnxruntime_providers_shared.dll",
+      "sha256": "e45d471ea2a842b268c51291b96d53568b0dae10807f43d1fb7dc0eb84e83723",
+      "bytes": 21816
+    }
+  ]
+}

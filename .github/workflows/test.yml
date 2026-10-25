@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  clean-install-baseline:
-    name: clean install baseline (${{ matrix.os }})
+  native:
+    name: Rust and MCP (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -18,118 +18,25 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: server/package-lock.json
-      - name: Install locked dependencies
-        working-directory: server
-        run: npm ci
-      - name: Verify install leaves lockfile clean
-        shell: bash
-        run: git diff --exit-code -- server/package-lock.json
-      - name: Baseline regression
-        run: node bin/test-baseline.mjs
-
-  release-regression:
-    name: architecture regression (Windows)
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: server/package-lock.json
-      - name: Install locked dependencies
-        working-directory: server
-        run: npm ci
-      - name: Verify real semantic model inference
-        working-directory: server
-        run: node --input-type=module -e "import {embed} from './lib/native-embeddings.mjs'; const v=await embed('Shared persistent memory'); if(v?.length!==384 || !Array.from(v).every(Number.isFinite)) process.exit(1);"
-      - name: Run complete release regression suite
-        run: npm run test:all --prefix server
-
-  dependency-audit:
-    name: production dependency audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - name: Install locked dependency state
-        working-directory: server
-        run: npm ci
-      - name: Audit production dependencies
-        working-directory: server
-        run: npm audit --omit=dev --audit-level=high
-
-  public-history-audit:
-    name: public history audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Reject sensitive artifacts in current tree
-        shell: bash
-        run: |
-          set -euo pipefail
-          git ls-tree -r --name-only HEAD > /tmp/antmemory-current-files.txt
-          if grep -E '^(stores/.*\.(db|sqlite|sqlite3)(-wal|-shm)?|runtime/workspaces\.json|logs/.*\.log|backups/.+)$' /tmp/antmemory-current-files.txt; then
-            echo 'Sensitive runtime artifact is tracked in the current tree.' >&2
-            exit 1
-          fi
-          private_path_pattern='C:\\Users\\[^\\[:space:]]+\\|[A-Za-z]:\\ANTIGRABTY\\'
-          if git grep -n -E "$private_path_pattern" HEAD -- . ':!server/package-lock.json' ':!.github/workflows/test.yml'; then
-            echo 'Private-machine absolute path exists in the current tree.' >&2
-            exit 1
-          fi
-      - name: Reject development-only release layout
-        shell: bash
-        run: |
-          set -euo pipefail
-          if grep -E '^(ROADMAP.*\.md|INTERNAL_PLAN\.md|メモリの使い方\.md|ユーザーが見る用/|復元ログ/|bin/war-memory-bulk\.mjs$|docs/public-release-checklist\.md$)' /tmp/antmemory-current-files.txt; then
-            echo 'Development-only or legacy public path is present in the release tree.' >&2
-            exit 1
-          fi
-          legacy_reference_pattern='ROADMAP.*\.md|INTERNAL_PLAN\.md|メモリの使い方\.md|ユーザーが見る用|public-release-checklist\.md'
-          if git grep -n -E "$legacy_reference_pattern" HEAD -- . ':!.github/workflows/test.yml'; then
-            echo 'A stale reference to a removed development/legacy path remains in the release tree.' >&2
-            exit 1
-          fi
-      - name: Reject historically committed runtime databases and logs
-        shell: bash
-        run: |
-          set -euo pipefail
-          git rev-list --objects --all > /tmp/antmemory-objects.txt
-          if grep -E '(^| )(stores/.*\.(db|sqlite|sqlite3)(-wal|-shm)?|runtime/workspaces\.json|logs/[^ ]+|backups/[^ ]+)$' /tmp/antmemory-objects.txt; then
-            echo 'Sensitive runtime artifacts exist in Git history.' >&2
-            exit 1
-          fi
-      - name: Reject high-confidence credentials in Git history
-        shell: bash
-        run: |
-          set -euo pipefail
-          git log -p --all -- . ':!server/package-lock.json' > /tmp/antmemory-history.patch
-          credential_pattern='sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[0-9A-Za-z_-]{30,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{20,}|BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY'
-          if grep -E "$credential_pattern" /tmp/antmemory-history.patch; then
-            echo 'Potential credential found in Git history.' >&2
-            exit 1
-          fi
-      - name: Reject private paths and non-noreply metadata in Git history
-        shell: bash
-        run: |
-          set -euo pipefail
-          path_pattern='C:\\Users\\[^\\[:space:]]+\\|[A-Za-z]:\\ANTIGRABTY\\'
-          if grep -E "$path_pattern" /tmp/antmemory-history.patch; then
-            echo 'Private-machine absolute path exists in Git history.' >&2
-            exit 1
-          fi
-          non_noreply=$(git log --all --format='%ae%n%ce' | sed '/^$/d' | sort -u | grep -Ev '(@users\.noreply\.github\.com$|@noreply\.github\.com$)' | wc -l || true)
-          if [ "$non_noreply" -gt 0 ]; then
-            echo 'Non-noreply author or committer metadata exists in Git history.' >&2
-            exit 1
-          fi
+      - name: Native regression
+        run: cargo test --workspace --release --locked
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --release --locked -- -D warnings
+      - name: Build
+        run: cargo build --release --locked -p am-cli
+      - name: MCP smoke and public 2.x migration
+        run: python scripts/smoke_mcp.py --migration
+      - name: Compatibility launcher syntax
+        run: node --check bin/ant-memory.mjs
+      - name: Lockfile unchanged
+        run: git diff --exit-code -- Cargo.lock

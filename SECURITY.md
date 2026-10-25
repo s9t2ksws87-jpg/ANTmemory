@@ -41,6 +41,6 @@ For ordinary bugs that do not involve sensitive information, use GitHub Issues.
 
 ## Native runtime and dependencies
 
-ANTmemory 2.0.0 owns its MCP/storage/search runtime. It does not install or patch `agent-memory-store`; derived-code attribution is retained in `THIRD_PARTY_NOTICES.md`.
+ANTmemory 4 owns its Rust daemon/shim, storage and retrieval. The local IPC transport and conversation adapters assume a trusted local user, not an external authentication boundary. Overall-goal quotes require supported client evidence; a tool-supplied reference alone is not user authorization.
 
-Dependency updates and native-runtime changes require compatibility checks before release. Install from `server/package-lock.json` with `npm ci`, run the release regression suite, and audit production dependencies.
+Install the complete release and verify its published checksums; retain model/runtime/dependency notices and use the locked source graph. Test compatibility and data rehearsal before upgrades. asset manifests contain fixed SHA-256 values; source assets are loaded locally. Old public-2.x code is historical migration evidence, not the active server.

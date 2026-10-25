@@ -1,0 +1,36 @@
+[package]
+name = "am-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "antmemory"
+path = "src/main.rs"
+
+[dependencies]
+am-domain.workspace = true
+am-store.workspace = true
+am-anchor.workspace = true
+am-embed.workspace = true
+am-tools.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+hex.workspace = true
+rusqlite.workspace = true
+sha2.workspace = true
+interprocess = "2.2"
+tiny_http = "0.12"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Console"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

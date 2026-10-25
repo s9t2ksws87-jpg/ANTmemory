@@ -31,10 +31,12 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-## Runtime dependencies and model
+## Version 4 runtime and models
 
-The MCP SDK, Hugging Face transformers runtime, Zod, gray-matter, their transitive dependencies, and platform-specific runtime packages retain their own licenses. Dependency versions and package license metadata are recorded in `server/package-lock.json` and installed package files. Preserve their required notices when redistributing dependencies.
+The Rust implementation uses the locked Cargo graph. Full per-dependency notices and metadata are in [third_party/rust/README.md](third_party/rust/README.md). ANTmemory-owned V4 code is MIT licensed; dependency licenses are not changed.
 
-The `Xenova/all-MiniLM-L6-v2` model is downloaded separately from Hugging Face; it is not bundled into this repository. Its model card and accompanying license govern the model files: https://huggingface.co/Xenova/all-MiniLM-L6-v2
+Windows distributions include Microsoft's ONNX Runtime 1.31.0 CPU libraries, under its MIT license and included upstream third-party notices: [third_party/onnxruntime](third_party/onnxruntime/). The runtime archive and extracted binaries are pinned in assets.lock.json.
 
-ANTmemory's MIT license covers its independently owned code, documentation, and tests; it does not relicense third-party components.
+The Ruri model is cl-nagoya/ruri-v3-70m by Hayato Tsukagoshi and Ryohei Sasano, under Apache-2.0. The bundled INT8 ONNX export is byte-matched to mochiya98/ruri-v3-70m-onnx. The file is renamed from model_int8.onnx to model.onnx without changing its bytes. The original model card, export card and license are in [third_party/ruri](third_party/ruri/); fixed revisions, sources and checksums are in assets.lock.json.
+
+Historical JavaScript dependencies remain declared in legacy/v2/server/package-lock.json. Their packages and model weights are not part of the V4 binary distribution. No npm dependency is required by the native runtime or optional Node bridge.

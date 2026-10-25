@@ -1,115 +1,72 @@
-# ANTmemory
+# ANTmemory 4
 
-Claude Code・Codex・Antigravity・Hermesなど、複数のMCPクライアントが共有する、履歴を追跡できる永続メモリ。
+Claude Code・Codex・Antigravity・Hermesなどが共有する、履歴を追跡できるローカル永続メモリ。**公開版4.0.0**では本体をRustのdaemonとstdioクライアントへ置き換えました。
 
-**現在の公開版: 2.0.0。** [English](README.md) · [1.0.0からの更新](docs/UPGRADING.md)
+[English](README.md) · [ダウンロード](https://github.com/s9t2ksws87-jpg/ANTmemory/releases/latest) · [2.xからの更新](docs/UPGRADING.md)
 
-ANTの元名称は **Agent Nest Tool** です。エージェントが記憶を持ち寄るアリの巣をイメージし、作業空間ごとにSQLiteのDBファイルを物理分離しています。あるエージェントが残した決定を別のエージェントが読み、その根拠や変更履歴も確認できます。
+ANTは **Agent Nest Tool** に由来します。決定・根拠・停止点を持ち寄る記憶の巣です。解決した作業空間ごとにSQLiteのDBを分け、別エージェントが記憶から判断の経緯や現物へ戻れます。
 
-2.0.0ではMCPサーバー・保存・移行・検索の実装をANTmemory側で所有します。`agent-memory-store` の実行時導入やインストール時パッチは不要になりました。由来とライセンス表記は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) に残しています。
+## Windows x64で使う
 
-## できること
-
-- 同じ作業空間を選択したクライアント間で、記憶と現在状態を共有します。記録主体は接続元の `ANT_MEMORY_CLIENT` で決まります。
-- 訂正・置換・撤回・期限切れでも旧本文を保持し、理由と監査イベントを残します。物理削除ツールは公開しません。
-- 通常検索ではactiveかつhot/warmの記録をmetadataと短い要約で返します。全文・履歴・cold/archiveは必要時に指定できます。
-- 日本語に対応するtrigram FTS5/BM25とローカルMiniLM埋め込みを組み合わせます。モデルを利用できない場合はBM25へフォールバックします。
-- 観測・明示したUNKNOWN・仮説・再観測を別記録として保存し、`source_ref` でRawへ戻る取手を残せます。
-- 通常のエージェント向けは **16ツール**。旧互換・保守・診断用ツールは明示的なadvanced設定で追加します。
-
-記憶は「何を記録したか」の証拠です。外界の真実を自動保証するものではありません。検索スコアも候補内の相対値で、`1.0` は正しさや関連性の保証ではありません。重要な判断では日時・現行状態・元の根拠を再確認します。
-
-## 導入
-
-**Node.js 24以上**とnpmが必要です。
-
-```sh
-git clone https://github.com/s9t2ksws87-jpg/ANTmemory.git
-cd ANTmemory/server
-npm ci
-```
-
-クライアントのMCP設定に登録します。パスと接続元名は環境に合わせて変更してください。
+1. ReleaseのANTmemory-4.0.0-windows-x64.zipとSHA256SUMS.txtを取得します。
+2. ハッシュを確認し、ZIP全体を書込可能なフォルダへ展開します。runtime/・models/・stores/・ライセンス類を一緒に置きます。
+3. MCP設定へ登録します。パスは展開場所へ変更してください。
 
 ```json
-{
-  "mcpServers": {
-    "ant-memory": {
-      "command": "node",
-      "args": ["<ABSOLUTE_PATH_TO_ANTMEMORY>/bin/ant-memory.mjs"],
-      "env": {
-        "ANT_MEMORY_CLIENT": "claude-code"
-      }
-    }
-  }
-}
+{"mcpServers":{"ant-memory":{"command":"C:/tools/ANTmemory/runtime/bin/antmemory.exe","args":["serve"]}}}
 ```
 
-対象プロジェクト内からクライアントを起動するか、`env` に `ANT_MEMORY_WORKSPACE` と作業空間の絶対パスを指定します。同じDBを共有するには、各クライアントが同じ作業空間を選択する必要があります。設定変更・更新後はMCP接続を再起動します。
+exe・CPU用ONNX Runtime・固定したINT8 Ruriモデルを同梱します。通常利用にNode.js・npm・Rustコンパイラ・クラウドAPI・初回モデルダウンロードは不要です。
 
-初回は `Xenova/all-MiniLM-L6-v2` をダウンロードします。fp32 ONNXファイルは約90 MBです。完了したダウンロードだけをキャッシュに採用し、中断したファイルは再利用しません。キャッシュはtransformersランタイムのcacheディレクトリ内の `antmemory-atomic` に保存します。モデルの読込状況はstderrへ出力します。
+対象プロジェクト内からクライアントを起動します。別フォルダから同じ記憶を使う場合は、そのフォルダの .antmemory-workspace に参照先をUTF-8で1行保存するか、プロジェクト用MCP設定のANT_MEMORY_WORKSPACEへ明示します。変更後は再接続します。不明な接続は _shared を使うと短く知らせます。これは共有の退避先であり、プロジェクト専用DBではありません。
 
-## 通常16ツール
+旧node bin/ant-memory.mjsとnode server/native-server.mjsもexeへの中継として使えます。この中継にnpm依存はありません。旧2.xソースはlegacy/v2/へ保存しています。
 
-| 用途 | ツール |
-|---|---|
-| 検索・保存・取得 | `search_context`, `write_context`, `read_context`, `list_context` |
-| 履歴を残した更新 | `correct_context`, `supersede_context`, `retract_context`, `restore_context`, `change_importance`, `get_context_history` |
-| 可視性 | `set_visibility` |
-| 現在の共有状態 | `get_state`, `set_state`, `list_state` |
-| 観測の循環 | `observe_context`, `list_unknowns` |
+## 普段の使い方
 
-検索件数は `top_k`、概算token上限は `token_budget` です。必要に応じて `full_content`・`include_history`・`include_hidden` を使います。`read_context` はRaw全文とstatus・visibility・current・日時・存在時のsource_refを一緒に返します。
-
-軽微訂正は `correct_context` で、省略したmetadataを継承して新版を作ります。内容全体の置換は `supersede_context` で、新記録のmetadataを明示します。どちらも旧本文を残します。訂正・置換・撤回・復元・重要度・可視性の変更には理由が必要です。`delete_context` はadvancedでも公開しません。
-
-stateは現在状態の共有黒板です。例えば `goal.current` に全体目的へのポインタを置けますが、これは通常のstateキーであり、自動作成・自動注入・強制適用はしません。同時更新には `set_state(expected_value=...)` を使い、経緯や決定理由は記憶側へ残します。
-
-詳しい例は [メモリの使い方](docs/MEMORY_USAGE.ja.md) を参照してください。
-
-## 作業空間の選択
-
-選択順は次の通りです。
-
-1. `ANT_MEMORY_WORKSPACE` の明示指定（絶対パスまたはstore名）。
-2. cwdから上方向へ探索して見つかったプロジェクト目印。
-3. cwdから特定できない場合、検証を通ったworkspace環境変数。
-4. 対応するWindows環境でのAntigravity内部workspace情報。
-5. 特定できなければ `_shared`。
-
-絶対パスとstore名の対応は `runtime/workspaces.json` に記録し、同名衝突時は短いハッシュを付けます。単なるstore名は `stores/<name>/store.db` を直接選択します。`_shared` は実際に共有される退避先です。利用前に選択先を確認できます。
-
-```sh
-node /absolute/path/to/ANTmemory/bin/ant-memory.mjs --where
+```text
+search_context(query="前に決めたパーサーの方針")
+read_context(id="検索結果のread参照をそのまま")
+write_context(content="B案に決めた。理由は……。残ったUnknownは……。")
 ```
 
-Antigravityの検出はIDE内部情報に依存し、複数ウィンドウで曖昧な場合は最近使った作業空間を選ぶことがあります。確実に指定する場合は `ANT_MEMORY_WORKSPACE` を使います。IDE本体やホームから起動したクライアントも `_shared` へ落ちる場合があります。実際の選択は `--where` と `logs/launcher.log` で確認します。
+保存は **contentだけ** で使えます。題名・接続元・作業空間・記録時Git情報は自動、tags・取手は任意です。
 
-Hermesでは保存後の設定を確認し、`env` が `ANT_MEMORY_CLIENT` を含むmappingになっていることを確認してください。過去の観測では `--env` の値が `args` に保存されるビルドがありました。
+- 検索は既定4候補・全体約1,000推定token。原文の抜粋から、必要な全文や範囲を開けます。
+- 訂正・置換・撤回・期限切れでも旧本文と履歴を保持します。物理削除は公開しません。
+- 検索から選んで読んだ記憶は、その検索語でも思い出せます。有用性とは別枠で、後からの「無関係」も反映します。
+- 作業札は未完了の作業を短く示します。show_goals(id)は閲覧、enter=trueで作業先も選択。全体目標は対応する会話原文の引用を照合できた時だけ正式にし、不明なら候補を残します。
+- UNKNOWN・仮説・再観測を分けます。記憶は保存した内容の記録であり、外界の正しさの自動保証ではありません。重要な判断は日付・状態・出典を確認します。
 
-## Viewer
+通常19ツールと具体例は [使い方](docs/MEMORY_USAGE.ja.md) を参照してください。一覧には総数と続きが付き、長いRawは範囲を指定できます。自動既読省略は圧縮世代を観測できるC2の同じ接続だけです。C0/C1でも返答を小さくしますが、圧縮後の記憶を仮定しません。
 
-```sh
-node viewer/server.mjs
+## 閲覧・保守・ビルド
+
+記憶を見る.batでIDE風の読取専用Viewerが127.0.0.1:3737に開きます。閲覧で検索学習やエージェントの作業先は変わりません。
+
+```powershell
+./runtime/bin/antmemory.exe viewer
+./runtime/bin/antmemory.exe status
+./runtime/bin/antmemory.exe doctor --all
 ```
 
-`127.0.0.1:3737` で起動する読取専用Viewerです。作業空間・記憶・履歴・可視性・usage・想起理由を確認できます。Windowsでは `viewer/start-viewer.bat` も使えます。[詳細](viewer/README.md)
+daemonは点検・WAL書戻し・ログ回転・毎日のバックアップを定期実行し、バックアップを14日分保持します。[構成](docs/ARCHITECTURE.md)
 
-## 保守と検証
+ソースからは現在のstable Rustを使います。配布バイナリはWindows x64向けです。Linux CIの対象はコアとBM25で、Windows DLLの意味検索ではありません。
 
-```sh
-npm run test:all --prefix server
-npm audit --omit=dev --audit-level=high --prefix server
+```powershell
+cargo test --workspace --release --locked
+cargo clippy --workspace --all-targets --release --locked -- -D warnings
+cargo build --release --locked -p am-cli
+python scripts/fetch_assets.py
+New-Item -ItemType Directory -Force stores, runtime | Out-Null
+$env:ANT_MEMORY_ROOT = (Get-Location).Path
+./target/release/antmemory.exe install
+python scripts/smoke_mcp.py
 ```
 
-試験は分離storeで実行し、詳細をGit管理外の `test-logs/` に保存します。Raw保持、検索、native MCP、通常16ツール、観測の系譜、全体目的と出典、Viewer、同時書込、モデルキャッシュを検証します。実際の仕事への効力とは区別して [検証記録](docs/RELEASE_VALIDATION.md) に範囲を残します。
+アセット取得は固定ハッシュを検証します。モデル・ランタイムを利用できない場合はBM25動作であると返します。旧2.x移行試験はNode.js 24以上を用意し、python scripts/smoke_mcp.py --migrationで実行します。
 
-保守で必要な場合のみMCPサーバーに `ANT_MEMORY_ADVANCED_TOOLS=1` を指定します。旧互換alias、深掘り検索/session、要約診断、想起ログ、可視性推奨などが追加されます。通常作業は16ツールで行います。
+**既存2.xは先に [更新手順](docs/UPGRADING.md) を確認してください。** store.dbを自動上書きせず、V4はv4.dbを使います。予行照合・バックアップ・旧書込の停止を確認して切り替えます。ZIPには個人のDB・会話ログ・対応表を含めません。
 
-`stores/`・`runtime/`・`logs/`・`backups/`・依存関係・生成した試験データはGit管理外です。更新前は書込プロセスを止め、storeをバックアップします。[更新手順](docs/UPGRADING.md) · [変更履歴](CHANGELOG.md) · [SECURITY.md](SECURITY.md)
-
-旧1.0.0の検証は [ARCHITECTURE_VALIDATION.md](docs/ARCHITECTURE_VALIDATION.md) に歴史資料として保持しています。2.0.0の計測ではありません。[設計比較](docs/ARCHITECTURE_RESEARCH.md)
-
-## ライセンス
-
-ANTmemory所有部分はMITです。第三者部分はそれぞれのライセンスに従います。[LICENSE](LICENSE) · [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+ANTmemory独自部分はMIT、モデル・ランタイム・依存ライブラリはそれぞれのライセンスです。[第三者表示](THIRD_PARTY_NOTICES.md) · [検証](docs/RELEASE_VALIDATION.md) · [ローカル環境の前提](SECURITY.md)

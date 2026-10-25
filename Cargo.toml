@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = ["crates/am-domain", "crates/am-store", "crates/am-anchor", "crates/am-embed", "crates/am-tools", "crates/am-cli"]
+
+[workspace.package]
+version = "4.0.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+am-domain = { path = "crates/am-domain" }
+am-store = { path = "crates/am-store" }
+am-anchor = { path = "crates/am-anchor" }
+am-embed = { path = "crates/am-embed" }
+am-tools = { path = "crates/am-tools" }
+rusqlite = { version = "0.32.1", features = ["bundled", "backup"] }
+serde = { version = "1.0.210", features = ["derive"] }
+serde_json = "1.0.128"
+sha2 = "0.10.8"
+hex = "0.4.3"
+thiserror = "1.0.64"
+anyhow = "1.0.89"
+chrono = { version = "0.4.38", default-features = false, features = ["clock", "std"] }
+clap = { version = "4.5.20", features = ["derive"] }
+tempfile = "3.13.0"
+
+[workspace.lints.clippy]
+let_underscore_must_use = "deny"

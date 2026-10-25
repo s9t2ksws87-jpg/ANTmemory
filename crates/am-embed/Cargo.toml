@@ -1,0 +1,19 @@
+[package]
+name = "am-embed"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ort = { version = "2.0.0-rc.15", features = ["load-dynamic", "ndarray"] }
+sha2.workspace = true
+hex.workspace = true
+tokenizers = { version = "0.20", default-features = false, features = ["onig"] }
+thiserror.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+rusqlite.workspace = true
+
+[lints]
+workspace = true
