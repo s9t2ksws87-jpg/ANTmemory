@@ -29,7 +29,10 @@ pub fn relative(root: &std::path::Path, path: &str) -> Option<String> {
     let lp = p.to_lowercase();
     if lp.starts_with(&format!("{r}/")) {
         Some(p[r.len() + 1..].to_string())
-    } else if !std::path::Path::new(path).is_absolute() {
+    } else if !std::path::Path::new(path).is_absolute()
+        && !p.starts_with('/')
+        && !(p.as_bytes().first().is_some_and(u8::is_ascii_alphabetic) && p.as_bytes().get(1) == Some(&b':'))
+    {
         Some(p.trim_start_matches("./").to_string())
     } else {
         None
@@ -125,5 +128,9 @@ mod tests {
         assert_eq!(relative(root, r"F:\ANTIGRABTY\デュエマしようぜ！\CLAUDE.md").as_deref(), Some("CLAUDE.md"));
         assert_eq!(relative(root, "doc/a.md").as_deref(), Some("doc/a.md"));
         assert_eq!(relative(root, r"C:\other\x.md"), None);
+        assert_eq!(relative(root, r"\\server\other\x.md"), None);
+        assert_eq!(relative(root, "/other/x.md"), None);
+        let unix_root = std::path::Path::new("/projects/記憶");
+        assert_eq!(relative(unix_root, "/projects/記憶/doc/a.md").as_deref(), Some("doc/a.md"));
     }
 }

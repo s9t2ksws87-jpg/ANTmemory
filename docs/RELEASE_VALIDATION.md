@@ -1,6 +1,6 @@
 # Release 4.0.0 validation
 
-The V4 source is based on reviewed development revision 4634d5d9ac38d1ff4abe982f534601a5cf557a12. Public metadata uses version 4.0.0/MIT and an exact MCP version; legacy-writer discovery also recognizes the archived public-2.x path. No development stores, registries or conversation material are part of the export.
+The V4 source is based on reviewed development revision 4634d5d9ac38d1ff4abe982f534601a5cf557a12. Public metadata uses version 4.0.0/MIT and an exact MCP version; legacy-writer discovery also recognizes the archived public-2.x path. Cross-platform hook paths explicitly reject absolute Windows drive/UNC paths outside the workspace, including when tested on Linux. No development stores, registries or conversation material are part of the export.
 
 ## Reproduce
 
